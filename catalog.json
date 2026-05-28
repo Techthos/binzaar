@@ -1,0 +1,15 @@
+{
+  "apps": [
+    {
+      "repo": "Techthos/clockwork",
+      "category": "tools",
+      "display_name": "clockwork"
+    },
+    {
+      "repo": "Techthos/gofolio",
+      "category": "tools",
+      "display_name": "gofolio"
+    }
+  ],
+  "templates": []
+}

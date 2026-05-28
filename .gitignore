@@ -7,7 +7,15 @@
 /bin/
 /dist/
 # Build output of `go build ./...` dropping a binary named after the module dir
-/golang-product-maschine
+/microstore
+# Throwaway local build of the binary used for smoke-testing
+/microstore-fresh
+
+# Go build cache (when GOCACHE is redirected into the tree)
+/.gocache/
+
+# Logs
+*.log
 
 # Test & coverage
 *.test

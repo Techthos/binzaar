@@ -140,8 +140,9 @@ bbolt byte slice past its transaction.
 Each use-case names the entities, the surface(s), and the repository/service operations involved.
 
 1. **Configure store (first-run + edit).** *Entities:* `Config`. *Surfaces:* TUI, MCP. On first run,
-   apply defaults: `InstallDir = ~/.local/share/microstore/bin`, `ManifestURL` empty. The user sets
-   `ManifestURL` (required before catalog actions) and may change `InstallDir`. *Ops:* `ConfigRepo.Load/Save`.
+   apply defaults: `InstallDir = ~/.local/share/microstore/bin`, `ManifestURL` = the curated catalog
+   published from this repo (`https://raw.githubusercontent.com/Techthos/microstore/main/catalog.json`).
+   The user may change either from the Config screen / `set_config`. *Ops:* `ConfigRepo.Load/Save`.
 2. **List / refresh catalog.** *Entities:* `Catalog`, `ManifestEntry`. *Surfaces:* TUI, MCP. Fetch
    `ManifestURL` live and return app entries. *Ops:* GitHub-client fetch; no bbolt.
 3. **Search / filter catalog.** *Entities:* `ManifestEntry`. *Surfaces:* TUI, MCP. In-memory filter of
@@ -216,6 +217,8 @@ Non-trivial inputs use typed handlers with `jsonschema`-tagged structs. **All lo
 
 | Tool | Purpose (UC) | Input | Output |
 |---|---|---|---|
+| `get_config` | Read store config (UC 1) | — | `{ config: Config }` |
+| `set_config` | Update store config; empty fields unchanged (UC 1) | `{ manifest_url?: string, install_dir?: string }` | `{ config: Config }` |
 | `list_catalog` | List catalog app entries (UC 2) | — | `{ apps: ManifestEntry[] }` |
 | `search_apps` | Filter catalog (UC 3) | `{ query?: string, category?: string }` | `{ apps: ManifestEntry[] }` |
 | `app_details` | Repo info + latest release + assets + install state (UC 4) | `{ repo: string }` | `{ repo: RepoInfo, latest: Release, installed?: InstalledApp }` |
@@ -248,14 +251,14 @@ None in v1 (see Open Questions).
 
 `internal/tui`, one `*tview.Application`, single event-loop goroutine. All GitHub/disk work runs in a
 goroutine and funnels a **small** mutation back via `QueueUpdateDraw`; nothing blocks the event loop.
-Four screens stacked in `Pages`; a persistent status bar shows progress/errors.
+Five screens stacked in `Pages`; a persistent status bar shows progress/errors.
 
 ### Screens & navigation
 
 ```
-                 ┌───────────────────────────────────────────────┐
- Tab cycles ───▶ │ 1. Catalog   2. Detail   3. Installed   4. New │
-                 └───────────────────────────────────────────────┘
+                 ┌───────────────────────────────────────────────────────────┐
+ Tab cycles ───▶ │ 1. Catalog  2. Detail  3. Installed  4. New  5. Config     │
+                 └───────────────────────────────────────────────────────────┘
 
 [1] Catalog        Table (DisplayName/Repo, Category). `/` search, category filter.
    │ Enter ───────▶ [2] Detail
@@ -264,8 +267,10 @@ Four screens stacked in `Pages`; a persistent status bar shows progress/errors.
 [3] Installed      Table (Repo, Version, InstalledAt, last verify state).
    │                Keys: [u] update, [x] uninstall (Modal confirm), [v] verify.
 [4] New App        Form: choose Template (from manifest), Target dir (InputField).
-                    [Enter] scaffold ⇒ extract ⇒ app.Suspend → launch `claude /product-idea`
-                    (or print the command if `claude` is absent).
+   │                [Enter] scaffold ⇒ extract ⇒ app.Suspend → launch `claude /product-idea`
+   │                (or print the command if `claude` is absent).
+[5] Config         Form: Manifest URL + Install dir (InputField), [Save] persists.
+                    Pre-filled from the stored config (defaults on first run).
 ```
 
 ### Key interactions
@@ -277,13 +282,18 @@ Four screens stacked in `Pages`; a persistent status bar shows progress/errors.
 - **Installed:** `u` update, `x` uninstall (confirm via `Modal`), `v` re-verify; results update the row.
 - **New App:** a `Form` (template dropdown + target-dir input); submit scaffolds, then suspends the UI
   to hand off to `/product-idea`.
+- **Config:** a `Form` (manifest-URL + install-dir inputs) pre-filled from the stored config; `Save`
+  persists and refreshes the catalog.
 - Long operations show a busy indicator in the status bar and never freeze the loop.
 
 ## Acceptance Criteria
 
-- **UC 1 — Config:** Fresh DB yields defaults (`InstallDir = ~/.local/share/microstore/bin`, empty
-  `ManifestURL`). Setting and reloading returns the saved values. Catalog actions with an empty
-  `ManifestURL` produce a clear "manifest URL not set" error, not a crash.
+- **UC 1 — Config:** Fresh DB yields defaults (`InstallDir = ~/.local/share/microstore/bin`,
+  `ManifestURL` = the curated catalog published from this repo). Setting and reloading returns the
+  saved values. The config is editable from both faces — the TUI Config screen and the
+  `get_config`/`set_config` MCP tools; `set_config` leaves omitted/empty fields unchanged. Catalog
+  actions with an empty `ManifestURL` (if the user clears it) produce a clear "manifest URL not set"
+  error, not a crash.
 - **UC 2 — Catalog:** With a reachable manifest, all `Apps` entries are returned. With GitHub
   unreachable or a malformed manifest, a clear error is surfaced (no partial/silent success). Nothing
   is written to bbolt.

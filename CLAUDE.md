@@ -4,56 +4,79 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A template for building **single-binary Go micro-applications** that run fully locally. Each app
-bundles three faces over one shared domain:
+**microstore** is a single-binary, local "app store" for Go micro-apps: it browses a GitHub-hosted
+catalog (`catalog.json`), installs the right release binary for the host `GOOS/GOARCH` (with SHA-256
+verification), tracks/updates/uninstalls/re-verifies those installs, and scaffolds new micro-apps
+from templates — then hands off to `/product-idea`. It is **online-only** (no offline catalog
+cache); bbolt persists only your installs and the app's own config.
+
+It is itself an instance of the micro-app shape this repo also templates: three faces over one
+shared domain —
 
 - an **embedded bbolt database** (no server, no cgo) — its own data file,
-- an **MCP server** over stdio (and optionally HTTP), for use by LLM clients,
+- an **MCP server** over stdio (`mark3labs/mcp-go`), for use by LLM clients,
 - a **tview terminal UI**.
 
-The point of the template is to stamp out new micro-apps fast. The architecture, library choices,
-and conventions are fixed by the rules in `.claude/rules/`; read those before writing code in the
-layer they govern — they are the source of truth, not this file.
+`docs/SPECIFICATIONS.md` is the **contract** — the 12 use-cases (UC 1–12), the full MCP tool/resource
+surface, the TUI screens, and acceptance criteria. Read it before changing product behavior; per
+`.claude/rules/specification-rules.md`, spec and code change in the **same commit**. The per-layer
+conventions live in `.claude/rules/` and load automatically when you edit a matching path — they,
+not this file, are the source of truth for their layer.
 
-## Base structure
+## Runtime shape & invocation
 
-One binary, multiple **modes** selected in `cmd/`. The same process can serve MCP or launch the TUI,
-both backed by the same bbolt file.
+One binary, multiple **modes** selected in `cmd/`, all backed by the same bbolt file:
 
-**Note:** this repo ships as a bare template — only `CLAUDE.md`, `.claude/`, and `README.md` exist
-until `/app-init` runs. The tree below is the *target* shape; scaffolding starts flat and adds
-`cmd/`/`internal/` packages only as the spec needs them. Don't assume these dirs exist yet.
+- default / `tui` → launches the terminal UI;
+- `serve` / `mcp` → runs the MCP stdio server.
+
+The mode may lead (`microstore serve --db x`) or follow the flags (`microstore --db x serve`).
+`--db <path>` overrides the DB location (default `~/.local/share/microstore/microstore.db`).
+`MICROSTORE_GITHUB_TOKEN`, when set, authenticates GitHub requests (higher rate limits, private
+repos); otherwise access is anonymous.
 
 ```
-main.go               # thin: parse mode, call into cmd/
-cmd/                  # mode/transport selection + process lifecycle (open DB, wire deps, run)
+main.go               # thin: call cmd.Run(os.Args[1:])
+cmd/                  # mode parsing + lifecycle: open the one bbolt Store, build the Service, dispatch
 internal/
-  models/             # plain domain structs — NO persistence imports
-  db/                 # bbolt repositories; the ONLY package that imports bbolt
-  server/             # MCP server (mark3labs/mcp-go); transport-agnostic
-  tui/                # tview view layer; owns the one *tview.Application
+  models/             # plain domain structs (live vs. persisted) — NO persistence imports
+  db/                 # bbolt Store + ConfigRepo/InstallRepo; the ONLY package that imports bbolt
+  github/             # outbound HTTPS GitHub client (catalog, repo/releases/assets, downloads, tarballs)
+  install/            # download → verify SHA-256 → place 0755; Verify/Remove; host asset matching (match.go)
+  scaffold/           # download template tarball → strip top-level → extract (path-traversal-safe)
+  app/                # USE-CASE LAYER: orchestrates github+db+install+scaffold into UC 1–12
+  server/             # MCP server (tools.go/resources.go); delegates to app.Service
+  tui/                # tview view layer; owns the one *tview.Application; delegates to app.Service
 ```
-
-A typical invocation set: default → TUI; `serve` / `mcp` → MCP stdio server; a `--db <path>` flag
-shared by both.
 
 ## The dependency rule (the thing that's easy to get wrong)
 
-Dependencies point **one direction**:
+The piece most easily gotten wrong: **`internal/app` is the use-case layer, and `server`/`tui` depend
+on it — never directly on `db`, `github`, `install`, or `scaffold`.** All orchestration lives in
+`app` exactly once.
 
 ```
-models  ←  db  ←  server
-            ↑
-           tui
+models ← db ─────┐
+github ──────────┤
+install ─────────┼─ app  ─┬─ server (MCP)
+scaffold ────────┘        └─ tui
 ```
 
-- `internal/models` is storage-agnostic — never imports bbolt.
-- `internal/db` is the **only** place that touches `go.etcd.io/bbolt`. It exposes a repository type
-  that returns domain models; callers never see `*bolt.Tx`, `*bolt.Bucket`, or txn-scoped byte slices.
-- **Both `server` and `tui` go through `internal/db` repositories** — neither opens bbolt, runs a
-  transaction, or embeds business logic in a handler/draw call.
-- `cmd/` opens the single `*bolt.DB` once at startup, constructs the repository, and injects it into
-  whichever mode runs. `main` stays thin.
+- `internal/models` is storage-agnostic — never imports bbolt. It separates **live** entities
+  (fetched from GitHub every time, never persisted: `Catalog`, `Release`, `Asset`, …) from
+  **persisted** ones (`InstalledApp` keyed by `owner/name` slug, singleton `Config`).
+- `internal/db` is the **only** place that touches `go.etcd.io/bbolt`. `db.Open` returns a `*Store`
+  that hands out `ConfigRepo`/`InstallRepo`; callers receive domain models, never `*bolt.Tx`,
+  `*bolt.Bucket`, or txn-scoped byte slices.
+- `internal/github`, `internal/install`, `internal/scaffold` are leaf services depending only on
+  `models` (and on small interfaces — e.g. `install.Downloader`, `app.Cataloger` — that
+  `*github.Client` satisfies). They do **no** persistence.
+- `internal/app` (`Service`) wires those together behind the twelve use-case methods and returns
+  plain domain models (or `*AssetSelectionError` when an install needs a manual asset pick).
+- `internal/server` and `internal/tui` each define a narrow interface that `*app.Service` satisfies,
+  and call **only** through it — no bbolt, no GitHub client, no business logic in a handler/draw call.
+- `cmd/` opens the single `*bolt.DB` once, builds `app.New(github.New(), store)`, and injects that
+  one `Service` into whichever mode runs. `main` stays thin.
 
 ## Two cross-cutting constraints that shape everything
 
@@ -75,16 +98,18 @@ models  ←  db  ←  server
 | `.github/workflows/**` | `.claude/rules/github-actions.md` (least-privilege permissions, SHA-pinned third-party actions) |
 | anything that changes product behavior | `.claude/rules/specification-rules.md` (always-on: keep `docs/SPECIFICATIONS.md` in sync with the code) |
 
-These rules are path-scoped and load automatically when you edit a matching file — they are the
-source of truth for their layer.
+`internal/app`, `internal/github`, `internal/install`, and `internal/scaffold` have no dedicated
+rule file — they follow ordinary Go conventions plus the dependency rule above and the spec
+contract. When adding a use-case, add the method to `app.Service` first, then expose it from both
+`server` (a tool/resource) and `tui` (a screen/keybinding) through the interface each defines.
 
 ## Commands
 
-The spec-driven workflow: **`/product-idea`** writes `docs/SPECIFICATIONS.md`, **`/app-init <module-path>`**
-scaffolds the codebase against it (once), and **`/app-spec-sync`** audits code vs. spec — detecting
-drift via git-diff — then implements the gaps in small, test-covered phases. The
-**`build-and-release`** skill generates `.github/workflows/build-and-release.yml` (CI on push/PR plus
-a tag-triggered cross-platform release with checksums). After scaffolding, use the Makefile:
+This repo is already scaffolded; the active maintenance command is **`/app-spec-sync`**, which audits
+code vs. `docs/SPECIFICATIONS.md` (detecting drift via git-diff) and implements gaps in small,
+test-covered phases. (The earlier-stage **`/product-idea`** → **`/app-init <module-path>`** commands
+that wrote the spec and laid down the tree have already run.) The **`build-and-release`** skill
+generates a tag-triggered cross-platform release workflow with checksums. Day to day, use the Makefile:
 
 ```
 make run      # go run .
