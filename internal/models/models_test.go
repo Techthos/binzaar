@@ -47,7 +47,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Parallel()
 		roundTrip(t, models.Catalog{
 			Apps: []models.ManifestEntry{
-				{Repo: "techthos/microstore", Category: "tools", DisplayName: "microstore"},
+				{Repo: "techthos/microstore", Category: "tools", DisplayName: "microstore", Bin: "store"},
 				{Repo: "techthos/foo", Category: "tools"},
 			},
 			Templates: []models.Template{
@@ -84,6 +84,7 @@ func TestRoundTrip(t *testing.T) {
 			Repo:        "techthos/microstore",
 			DisplayName: "microstore",
 			Category:    "tools",
+			Bin:         "store",
 			Version:     "v1.2.0",
 			AssetName:   asset.Name,
 			Path:        "/home/op/.local/share/microstore/bin/microstore",

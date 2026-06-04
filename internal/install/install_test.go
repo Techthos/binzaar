@@ -122,18 +122,22 @@ func TestInstallVerifiedSuccess(t *testing.T) {
 }
 
 // TestInstallPlacedNamePrefix pins the focus contract: installed binaries land
-// under InstallDir as "microapp-<repo bare name>", with any ".exe" preserved.
+// under InstallDir as "microapp-<repo bare name>" (or "microapp-<bin>" when the
+// manifest entry overrides the name), with any ".exe" preserved.
 func TestInstallPlacedNamePrefix(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name      string
 		repo      string
+		bin       string
 		assetName string
 		want      string
 	}{
 		{name: "posix binary", repo: "techthos/microstore", assetName: "microstore_linux_amd64", want: "microapp-microstore"},
 		{name: "windows exe preserves suffix", repo: "acme/tool", assetName: "tool_windows_amd64.exe", want: "microapp-tool.exe"},
 		{name: "repo without owner segment", repo: "solo", assetName: "solo_linux_arm64", want: "microapp-solo"},
+		{name: "bin override replaces bare name", repo: "techthos/microstore", bin: "store", assetName: "microstore_linux_amd64", want: "microapp-store"},
+		{name: "bin override keeps exe suffix", repo: "acme/tool", bin: "kit", assetName: "tool_windows_amd64.exe", want: "microapp-kit.exe"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -143,7 +147,7 @@ func TestInstallPlacedNamePrefix(t *testing.T) {
 			asset := models.Asset{Name: tc.assetName, DownloadURL: url, Size: int64(len(binBytes))}
 			rel := models.Release{TagName: "v1.0.0", Assets: []models.Asset{asset}}
 			dl := fakeDL{files: map[string][]byte{url: binBytes}}
-			ent := models.ManifestEntry{Repo: tc.repo, DisplayName: tc.repo, Category: "tools"}
+			ent := models.ManifestEntry{Repo: tc.repo, DisplayName: tc.repo, Category: "tools", Bin: tc.bin}
 
 			// AllowUnverified isolates this test to placement, not checksums.
 			got, err := install.New(dl, dest).Install(context.Background(), ent, rel, asset, install.Options{AllowUnverified: true})
@@ -153,6 +157,9 @@ func TestInstallPlacedNamePrefix(t *testing.T) {
 			wantPath := filepath.Join(dest, tc.want)
 			if got.Path != wantPath {
 				t.Errorf("Path = %s, want %s", got.Path, wantPath)
+			}
+			if got.Bin != tc.bin {
+				t.Errorf("Bin = %q, want %q (must persist so updates re-place at the same filename)", got.Bin, tc.bin)
 			}
 			if _, err := os.Stat(wantPath); err != nil {
 				t.Errorf("placed binary missing at %s: %v", wantPath, err)

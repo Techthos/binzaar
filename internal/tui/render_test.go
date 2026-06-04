@@ -12,9 +12,12 @@ import (
 func TestCatalogRow(t *testing.T) {
 	t.Parallel()
 	got := catalogRow(models.ManifestEntry{Repo: "o/a", Category: "tools", DisplayName: "Alpha"})
-	want := []string{"Alpha", "o/a", "tools"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("catalogRow = %v, want %v", got, want)
+	// Name is plain; repo and category carry color-tag markup around the value.
+	if got[0] != "Alpha" {
+		t.Errorf("name = %q, want Alpha", got[0])
+	}
+	if !strings.Contains(got[1], "o/a") || !strings.Contains(got[2], "tools") {
+		t.Errorf("catalogRow = %v, want repo+category present", got)
 	}
 	// Falls back to repo when DisplayName is empty.
 	got = catalogRow(models.ManifestEntry{Repo: "o/b", Category: "x"})
@@ -27,11 +30,25 @@ func TestInstalledRow(t *testing.T) {
 	t.Parallel()
 	ia := models.InstalledApp{Repo: "o/a", Version: "v1", InstalledAt: time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)}
 	got := installedRow(ia, "")
-	if got[0] != "o/a" || got[1] != "v1" || got[2] != "2026-05-28" || got[3] != "-" {
+	if got[0] != "o/a" || got[1] != "v1" || got[2] != "2026-05-28" {
 		t.Errorf("installedRow = %v", got)
 	}
-	if installedRow(ia, "ok")[3] != "ok" {
-		t.Errorf("verify column not propagated")
+	// Empty status renders the muted "not checked" cell; "ok" renders verified.
+	if !strings.Contains(got[3], "not checked") {
+		t.Errorf("empty verify = %q, want not checked", got[3])
+	}
+	if !strings.Contains(installedRow(ia, "ok")[3], "verified") {
+		t.Errorf("ok verify not rendered: %q", installedRow(ia, "ok")[3])
+	}
+}
+
+func TestVerifyCell(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{"ok": "verified", "mismatch": "mismatch", "missing": "missing", "": "not checked"}
+	for status, want := range cases {
+		if got := verifyCell(status); !strings.Contains(got, want) {
+			t.Errorf("verifyCell(%q) = %q, want it to contain %q", status, got, want)
+		}
 	}
 }
 
@@ -75,8 +92,8 @@ func TestTabsText(t *testing.T) {
 			t.Errorf("tabsText missing %q in:\n%s", want, got)
 		}
 	}
-	// The active page is highlighted with the reverse style tag.
-	if !strings.Contains(got, "[black:aqua:b] 3 Installed ") {
+	// The active page is highlighted with dark text on the accent background.
+	if !strings.Contains(got, "["+hexBg+":"+tagAccent+":b] 3 Installed ") {
 		t.Errorf("active tab not highlighted: %s", got)
 	}
 }

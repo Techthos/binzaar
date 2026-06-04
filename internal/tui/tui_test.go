@@ -109,6 +109,12 @@ func TestPathWarningOnLaunchHeadless(t *testing.T) {
 	// Generous deadline: standalone this renders in ~1s, but under the full
 	// `-race` suite the event loop competes for CPU with every other package.
 	deadline := time.After(15 * time.Second)
+	// The launch burst (four loaders + the path check) can overflow the 64-frame
+	// buffer, dropping frames; once the modal is up the screen is static, so the
+	// modal's frame could be lost forever. Force a periodic redraw to regenerate
+	// a fresh, observable frame regardless of any earlier drop.
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
 	for found := false; !found; {
 		select {
 		case txt := <-frames:
@@ -117,6 +123,8 @@ func TestPathWarningOnLaunchHeadless(t *testing.T) {
 			if strings.Contains(txt, "/home/u/bin") {
 				found = true
 			}
+		case <-tick.C:
+			a.Application().QueueUpdateDraw(func() {})
 		case <-deadline:
 			a.Application().Stop()
 			t.Fatal("PATH warning not rendered within 15s")

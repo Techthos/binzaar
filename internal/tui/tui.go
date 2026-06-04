@@ -37,6 +37,7 @@ type Service interface {
 type App struct {
 	app    *tview.Application
 	pages  *tview.Pages
+	header *tview.TextView
 	tabs   *tview.TextView
 	hint   *tview.TextView
 	status *tview.TextView
@@ -71,12 +72,14 @@ func New(svc Service) *App {
 	a := &App{
 		app:         tview.NewApplication(),
 		pages:       tview.NewPages(),
+		header:      tview.NewTextView().SetDynamicColors(true),
 		tabs:        tview.NewTextView().SetDynamicColors(true),
 		hint:        tview.NewTextView().SetDynamicColors(true),
 		status:      tview.NewTextView().SetDynamicColors(true),
 		svc:         svc,
 		verifyState: map[string]string{},
 	}
+	a.header.SetText(headerText)
 	a.tabs.SetText(tabsText(pageCatalog))
 	a.hint.SetText(hintFor(pageCatalog))
 
@@ -93,6 +96,7 @@ func New(svc Service) *App {
 	a.pages.AddPage(pageConfig, a.configPage(), true, false)
 
 	a.root = tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.header, 1, 0, false).
 		AddItem(a.tabs, 1, 0, false).
 		AddItem(a.pages, 0, 1, true).
 		AddItem(a.hint, 1, 0, false).
@@ -184,6 +188,7 @@ func (a *App) setStatus(format string, args ...any) {
 
 func (a *App) buildCatalog() {
 	a.catalog = tview.NewTable().SetSelectable(true, false).SetFixed(1, 0)
+	a.catalog.SetSelectedStyle(selectedStyle())
 	a.catalog.SetSelectedFunc(func(row, _ int) {
 		if row >= 1 && row-1 < len(a.catalogApps) {
 			a.openDetail(a.catalogApps[row-1].Repo)
@@ -214,9 +219,11 @@ func (a *App) catalogPage() tview.Primitive {
 	controls := tview.NewFlex().
 		AddItem(a.catalogSearch, 0, 2, false).
 		AddItem(a.catalogCat, 0, 1, false)
-	return tview.NewFlex().SetDirection(tview.FlexRow).
+	wrap := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(controls, 1, 0, false).
 		AddItem(a.catalog, 0, 1, true)
+	wrap.SetBorder(true).SetTitle(" Catalog ([Enter] details · [/] search) ")
+	return wrap
 }
 
 func (a *App) loadCatalog() {
@@ -336,6 +343,7 @@ func (a *App) showAssetPick(repo string, assets []models.Asset) {
 
 func (a *App) buildInstalled() {
 	a.installed = tview.NewTable().SetSelectable(true, false).SetFixed(1, 0)
+	a.installed.SetSelectedStyle(selectedStyle())
 	a.installed.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
 		if ev.Key() != tcell.KeyRune {
 			return ev
@@ -646,8 +654,9 @@ func templateLabel(t models.Template) string {
 func renderTable(table *tview.Table, header []string, rowCount int, row func(i int) []string) {
 	table.Clear()
 	for c, h := range header {
-		table.SetCell(0, c, tview.NewTableCell(h).
-			SetTextColor(tcell.ColorYellow).
+		table.SetCell(0, c, tview.NewTableCell(strings.ToUpper(h)).
+			SetTextColor(tcell.GetColor(hexAccent)).
+			SetAttributes(tcell.AttrBold).
 			SetSelectable(false).
 			SetExpansion(1))
 	}

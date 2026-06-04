@@ -1,6 +1,12 @@
 {
   "apps": [
     {
+      "repo": "Techthos/microstore",
+      "category": "tools",
+      "display_name": "microstore",
+      "bin": "store"
+    },
+    {
       "repo": "Techthos/clockwork",
       "category": "tools",
       "display_name": "clockwork"

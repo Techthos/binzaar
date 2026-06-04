@@ -271,7 +271,7 @@ func (s *Service) Update(ctx context.Context, repo string) (UpdateResult, error)
 	if latest.TagName == existing.Version {
 		return UpdateResult{Installed: *existing, Updated: false, From: existing.Version, To: existing.Version}, nil
 	}
-	entry := models.ManifestEntry{Repo: existing.Repo, DisplayName: existing.DisplayName, Category: existing.Category}
+	entry := models.ManifestEntry{Repo: existing.Repo, DisplayName: existing.DisplayName, Category: existing.Category, Bin: existing.Bin}
 	rec, err := s.doInstall(ctx, entry, latest.TagName, "", false)
 	if err != nil {
 		return UpdateResult{}, err

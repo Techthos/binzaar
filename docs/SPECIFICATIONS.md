@@ -77,7 +77,7 @@ storage-agnostic (no bbolt imports). Serialization is **JSON** throughout.
 | Entity | Source | Key attributes |
 |---|---|---|
 | `Catalog` | manifest (`catalog.json`) | `Apps []ManifestEntry`, `Templates []Template` |
-| `ManifestEntry` | manifest | `Repo` (`owner/name`), `Category`, `DisplayName` (optional) |
+| `ManifestEntry` | manifest | `Repo` (`owner/name`), `Category`, `DisplayName` (optional), `Bin` (optional — overrides the repo's bare name in the placed `microapp-<name>` filename) |
 | `Template` | manifest | `Repo` (`owner/name`), `Ref` (branch/tag), `Name`, `Description` |
 | `RepoInfo` | GitHub repo API | `FullName`, `Description`, `Homepage`, `Stars` |
 | `Release` | GitHub releases API | `TagName`, `Name`, `Body`, `PublishedAt` (time), `Prerelease` (bool), `Assets []Asset` |
@@ -87,7 +87,7 @@ storage-agnostic (no bbolt imports). Serialization is **JSON** throughout.
 
 | Entity | Identity | Key attributes |
 |---|---|---|
-| `InstalledApp` | `Repo` (`owner/name`) — natural unique key | `Repo`, `DisplayName`, `Category`, `Version` (installed tag), `AssetName`, `Path` (absolute), `SHA256`, `Size`, `InstalledAt` (time), `SourceURL` |
+| `InstalledApp` | `Repo` (`owner/name`) — natural unique key | `Repo`, `DisplayName`, `Category`, `Bin` (manifest override, kept so updates re-place at the same filename), `Version` (installed tag), `AssetName`, `Path` (absolute), `SHA256`, `Size`, `InstalledAt` (time), `SourceURL` |
 | `Config` | singleton | `ManifestURL`, `InstallDir` |
 
 ### Relationships
@@ -167,7 +167,8 @@ Each use-case names the entities, the surface(s), and the repository/service ope
 6. **Install app.** *Entities:* `Release`, `Asset`, `InstalledApp`. *Surfaces:* TUI, MCP. Resolve the
    target release (default: latest non-prerelease, or a specified tag), detect host `GOOS/GOARCH`,
    match an asset by naming convention, fetch the release's `checksums.txt`, download the asset,
-   **verify SHA-256**, write it to `InstallDir` as `microapp-<name>` (the repo's bare name, prefixed;
+   **verify SHA-256**, write it to `InstallDir` as `microapp-<name>` (the entry's `bin` override when
+   set, else the repo's bare name, prefixed;
    any `.exe` suffix preserved on Windows) with `0755`, and record an `InstalledApp`. On zero or
    ambiguous asset matches, fall back to manual asset selection. If no checksums file is found,
    installation is **refused** unless an explicit "allow unverified" override is given. *Ops:* GitHub
@@ -327,7 +328,8 @@ When `InstallDir` is already on `$PATH`, no modal appears.
   "latest" resolution.
 - **UC 6 — Install:** On a host where exactly one asset matches `GOOS/GOARCH`, microstore downloads it,
   the computed SHA-256 equals the `checksums.txt` entry, the file lands in `InstallDir` named
-  `microapp-<name>` (the repo's bare name, prefixed) mode `0755`, and an `InstalledApp` record exists
+  `microapp-<name>` (the entry's `bin` override when set, else the repo's bare name, prefixed) mode
+  `0755`, and an `InstalledApp` record exists
   keyed by slug with its `Path` pointing at that file. A checksum mismatch aborts the install, writes no
   record, and leaves no partial binary. Zero/ambiguous matches trigger manual selection (TUI) or an
   error result enumerating assets (MCP). A missing checksums file refuses install unless
@@ -374,8 +376,13 @@ When `InstallDir` is already on `$PATH`, no modal appears.
   surfaces the limit/reset. *Assumption accepted.*
 - **Manifest schema.** `catalog.json` is `{ "apps": ManifestEntry[], "templates": Template[] }`, fetched
   from `Config.ManifestURL` (a raw JSON URL). App entries are **minimal** (`repo`, `category`, optional
-  `displayName`); richer metadata is read live from GitHub. *Assumption — finalize the exact field
-  names with the first published manifest.*
+  `display_name`, optional `bin`); richer metadata is read live from GitHub. *Assumption — finalize the
+  exact field names with the first published manifest.*
+- **Self-hosting.** The curated catalog lists microstore itself (`Techthos/microstore`, `bin: "store"`),
+  so the store installs and updates itself as `microapp-store` alongside the apps it manages. The
+  `scripts/install.sh` bootstrap places that same file (`microapp-store` in the default `InstallDir`,
+  `~/.local/share/microstore/bin`), so a later `install`/`update` of `Techthos/microstore` from within
+  microstore overwrites it in place.
 - **Asset naming convention.** An asset matches when its lower-cased name contains an OS token and an
   arch token for the host runtime, with aliases: `amd64`↔`x86_64`/`x64`, `arm64`↔`aarch64`,
   `386`↔`i386`/`x86`, `darwin`↔`macos`/`osx`, `windows`↔`win` (`.exe`). This matches the template's

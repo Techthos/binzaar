@@ -39,6 +39,10 @@ var tabLabels = map[string]string{
 	pageConfig:    "Config",
 }
 
+// headerText is the static brand bar drawn above the tabs.
+const headerText = "[" + tagAccent + "::b] ◆ microstore " + keyClose +
+	" [" + tagDim + "]local app store for Go micro-apps[-]"
+
 // tabsText renders the top tab bar as dynamic-color markup, highlighting the
 // active page. The leading number matches the 1-5 quick-switch keys.
 func tabsText(active string) string {
@@ -46,9 +50,9 @@ func tabsText(active string) string {
 	for i, p := range pageOrder {
 		label := fmt.Sprintf(" %d %s ", i+1, tabLabels[p])
 		if p == active {
-			parts = append(parts, "[black:aqua:b]"+label+"[-:-:-]")
+			parts = append(parts, "["+hexBg+":"+tagAccent+":b]"+label+"[-:-:-]")
 		} else {
-			parts = append(parts, "[aqua]"+label+"[-]")
+			parts = append(parts, "["+tagAccent+"]"+label+"[-]")
 		}
 	}
 	return strings.Join(parts, " ")
@@ -57,21 +61,24 @@ func tabsText(active string) string {
 // hintFor returns the context-sensitive keybinding hints for a page, shown in
 // the footer hint bar so every shortcut is discoverable on screen.
 func hintFor(page string) string {
-	const global = "[::b]1-5[::-]/[::b]Tab[::-] switch  [::b]q[::-] quit"
+	global := k("1-5") + "/" + k("Tab") + " switch  " + k("q") + " quit"
 	switch page {
 	case pageCatalog:
-		return "[::b]↑↓[::-] move  [::b]Enter[::-] details  [::b]/[::-] search  " + global
+		return k("↑↓") + " move  " + k("Enter") + " details  " + k("/") + " search  " + global
 	case pageDetail:
-		return "[::b]i[::-] install  [::b]Esc[::-] back  " + global
+		return k("i") + " install  " + k("Esc") + " back  " + global
 	case pageInstalled:
-		return "[::b]u[::-] update  [::b]x[::-] uninstall  [::b]v[::-] verify  " + global
+		return k("u") + " update  " + k("x") + " uninstall  " + k("v") + " verify  " + global
 	case pageNew:
-		return "[::b]↑↓[::-] fields  [::b]Enter[::-] scaffold  " + global
+		return k("↑↓") + " fields  " + k("Enter") + " scaffold  " + global
 	case pageConfig:
-		return "[::b]↑↓[::-] fields  [::b]Enter[::-] save  " + global
+		return k("↑↓") + " fields  " + k("Enter") + " save  " + global
 	}
 	return global
 }
+
+// k wraps a keybinding glyph in the accent+bold key style for the hint bar.
+func k(glyph string) string { return keyOpen + glyph + keyClose }
 
 // pathWarningText renders the launch-time warning shown when InstallDir is not
 // on $PATH: it names the directory, explains why installed binaries won't run,
@@ -103,16 +110,43 @@ func catalogRow(e models.ManifestEntry) []string {
 	if name == "" {
 		name = e.Repo
 	}
-	return []string{name, e.Repo, e.Category}
+	return []string{name, "[" + tagDim + "]" + e.Repo + "[-]", categoryTag(e.Category)}
+}
+
+// categoryPalette is the rotation of accent colors that categoryTag draws from,
+// chosen by a stable hash so the same category always gets the same color.
+var categoryPalette = []string{tagAccent, tagAccent2, tagGood, tagWarn, "#7dcfff", "#ff9e64"}
+
+func categoryTag(cat string) string {
+	if cat == "" {
+		return ""
+	}
+	var h uint32
+	for _, r := range cat {
+		h = h*31 + uint32(r)
+	}
+	return "[" + categoryPalette[h%uint32(len(categoryPalette))] + "]" + cat + "[-]"
 }
 
 var installedHeader = []string{"Repo", "Version", "Installed", "Verify"}
 
 func installedRow(a models.InstalledApp, verify string) []string {
-	if verify == "" {
-		verify = "-"
+	return []string{a.Repo, a.Version, a.InstalledAt.Format("2006-01-02"), verifyCell(verify)}
+}
+
+// verifyCell maps a re-verification status to a colored glyph + label for the
+// Installed table. The empty status means "not re-verified this session".
+func verifyCell(status string) string {
+	switch status {
+	case "ok":
+		return "[" + tagGood + "]✓ verified[-]"
+	case "mismatch":
+		return "[" + tagBad + "]✗ mismatch[-]"
+	case "missing":
+		return "[" + tagBad + "]✗ missing[-]"
+	default:
+		return "[" + tagDim + "]– not checked[-]"
 	}
-	return []string{a.Repo, a.Version, a.InstalledAt.Format("2006-01-02"), verify}
 }
 
 // filterApps applies the catalog's in-memory search: free-text on name/repo
@@ -149,40 +183,40 @@ func distinctCategories(apps []models.ManifestEntry) []string {
 // detailText renders an app's details as dynamic-color markup for the TextView.
 func detailText(d app.AppDetails) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[::b]%s[::-]", orDash(d.Repo.FullName))
+	fmt.Fprintf(&b, "["+tagAccent+"::b]%s"+keyClose, orDash(d.Repo.FullName))
 	if d.Repo.Stars > 0 {
-		fmt.Fprintf(&b, "   [yellow]★ %d[-]", d.Repo.Stars)
+		fmt.Fprintf(&b, "   ["+tagWarn+"]★ %d[-]", d.Repo.Stars)
 	}
 	b.WriteString("\n")
 	if d.Repo.Description != "" {
-		fmt.Fprintf(&b, "%s\n", d.Repo.Description)
+		fmt.Fprintf(&b, "["+tagText+"]%s[-]\n", d.Repo.Description)
 	}
 	if d.Repo.Homepage != "" {
-		fmt.Fprintf(&b, "[blue]%s[-]\n", d.Repo.Homepage)
+		fmt.Fprintf(&b, "["+tagAccent+"]%s[-]\n", d.Repo.Homepage)
 	}
 	b.WriteString("\n")
 
 	if d.Latest.TagName == "" {
-		b.WriteString("[gray]No published release.[-]\n")
+		b.WriteString("[" + tagDim + "]No published release.[-]\n")
 	} else {
-		fmt.Fprintf(&b, "[::b]Latest:[::-] %s", d.Latest.TagName)
+		fmt.Fprintf(&b, "["+tagAccent2+"::b]Latest:"+keyClose+" %s", d.Latest.TagName)
 		if !d.Latest.PublishedAt.IsZero() {
-			fmt.Fprintf(&b, "  (%s)", d.Latest.PublishedAt.Format("2006-01-02"))
+			fmt.Fprintf(&b, "  [%s](%s)[-]", tagDim, d.Latest.PublishedAt.Format("2006-01-02"))
 		}
-		b.WriteString("\n[::b]Assets:[::-]\n")
+		b.WriteString("\n[" + tagAccent2 + "::b]Assets:" + keyClose + "\n")
 		if len(d.Latest.Assets) == 0 {
-			b.WriteString("  [gray](none)[-]\n")
+			b.WriteString("  [" + tagDim + "](none)[-]\n")
 		}
 		for _, a := range d.Latest.Assets {
-			fmt.Fprintf(&b, "  - %s [gray](%s)[-]\n", a.Name, humanSize(a.Size))
+			fmt.Fprintf(&b, "  • %s ["+tagDim+"](%s)[-]\n", a.Name, humanSize(a.Size))
 		}
 	}
 
 	b.WriteString("\n")
 	if d.Installed != nil {
-		fmt.Fprintf(&b, "[green]Installed:[-] %s\n", d.Installed.Version)
+		fmt.Fprintf(&b, "["+tagGood+"::b]✓ Installed:"+keyClose+" %s\n", d.Installed.Version)
 	} else {
-		b.WriteString("[gray]Not installed.[-]\n")
+		b.WriteString("[" + tagDim + "]Not installed.[-]\n")
 	}
 	return b.String()
 }

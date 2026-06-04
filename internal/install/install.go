@@ -82,7 +82,7 @@ func (in *Installer) Install(ctx context.Context, entry models.ManifestEntry, re
 	if err := tmp.Close(); err != nil {
 		return models.InstalledApp{}, fmt.Errorf("close temp file: %w", err)
 	}
-	dest := filepath.Join(in.destDir, placedName(entry.Repo, asset.Name))
+	dest := filepath.Join(in.destDir, placedName(entry, asset.Name))
 	if err := os.Rename(tmpName, dest); err != nil {
 		return models.InstalledApp{}, fmt.Errorf("place binary at %q: %w", dest, err)
 	}
@@ -92,6 +92,7 @@ func (in *Installer) Install(ctx context.Context, entry models.ManifestEntry, re
 		Repo:        entry.Repo,
 		DisplayName: entry.DisplayName,
 		Category:    entry.Category,
+		Bin:         entry.Bin,
 		Version:     rel.TagName,
 		AssetName:   asset.Name,
 		Path:        dest,
@@ -244,13 +245,17 @@ func parseChecksums(data []byte) map[string]string {
 }
 
 // placedName is the filename an installed binary takes under InstallDir: the
-// repo's bare name (the segment after "owner/") prefixed with "microapp-", so
-// every installed micro-app is recognisable and grouped on a shared PATH. A
-// ".exe" suffix is preserved for Windows assets.
-func placedName(repo, assetName string) string {
-	name := repo
-	if i := strings.LastIndex(repo, "/"); i >= 0 {
-		name = repo[i+1:]
+// manifest entry's Bin override when set, otherwise the repo's bare name (the
+// segment after "owner/"), prefixed with "microapp-" either way, so every
+// installed micro-app is recognisable and grouped on a shared PATH. A ".exe"
+// suffix is preserved for Windows assets.
+func placedName(entry models.ManifestEntry, assetName string) string {
+	name := entry.Bin
+	if name == "" {
+		name = entry.Repo
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			name = name[i+1:]
+		}
 	}
 	name = "microapp-" + name
 	if strings.HasSuffix(strings.ToLower(assetName), ".exe") && !strings.HasSuffix(strings.ToLower(name), ".exe") {

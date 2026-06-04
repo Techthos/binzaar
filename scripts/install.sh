@@ -6,11 +6,14 @@
 #
 # Detects the host OS/arch, resolves the latest GitHub release (or a pinned
 # version), downloads the matching binary, verifies its SHA-256 against the
-# release's `.sha256` sidecar, and installs it onto your PATH.
+# release's `.sha256` sidecar, and installs it as `microapp-store` into
+# microstore's managed install directory — alongside the micro-apps it installs
+# — so the store can later update itself from its own catalog
+# (`microstore install Techthos/microstore` overwrites this same file).
 #
 # Environment overrides:
 #   MICROSTORE_VERSION       release tag to install (default: latest, e.g. v0.2.0)
-#   MICROSTORE_INSTALL_DIR   target directory     (default: ~/.local/bin)
+#   MICROSTORE_INSTALL_DIR   target directory     (default: ~/.local/share/microstore/bin)
 #   MICROSTORE_REPO          owner/name           (default: Techthos/microstore)
 #   MICROSTORE_GITHUB_TOKEN  token for private repos / higher API rate limits
 #                            (GITHUB_TOKEN is also honored)
@@ -18,9 +21,10 @@
 set -euo pipefail
 
 REPO="${MICROSTORE_REPO:-Techthos/microstore}"
-BIN="microstore"
+BIN="microstore"            # release asset base name
+PLACED="microapp-store"     # installed filename (matches the catalog's "bin": "store")
 VERSION="${MICROSTORE_VERSION:-latest}"
-INSTALL_DIR="${MICROSTORE_INSTALL_DIR:-${HOME}/.local/bin}"
+INSTALL_DIR="${MICROSTORE_INSTALL_DIR:-${HOME}/.local/share/microstore/bin}"
 TOKEN="${MICROSTORE_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
 
 # ---- output helpers (everything diagnostic goes to stderr) -------------------
@@ -121,7 +125,7 @@ fi
 ASSET="${BIN}-${TAG}-${GOOS}-${GOARCH}"
 BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-info "Installing ${BIN} ${TAG} (${GOOS}/${GOARCH})"
+info "Installing ${BIN} ${TAG} (${GOOS}/${GOARCH}) as ${PLACED}"
 
 # ---- download + verify in a self-cleaning temp dir --------------------------
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/microstore-install.XXXXXX")"
@@ -148,19 +152,19 @@ fi
 
 # ---- install ----------------------------------------------------------------
 mkdir -p "$INSTALL_DIR" || die "cannot create install directory: ${INSTALL_DIR}"
-DEST="${INSTALL_DIR}/${BIN}"
+DEST="${INSTALL_DIR}/${PLACED}"
 if command -v install >/dev/null 2>&1; then
   install -m 0755 "${TMP}/${ASSET}" "$DEST" || die "failed to install to ${DEST} (need write permission?)"
 else
   mv "${TMP}/${ASSET}" "$DEST" && chmod 0755 "$DEST" || die "failed to install to ${DEST}"
 fi
 
-info "${C_GREEN}Installed${C_RESET} ${BIN} ${TAG} → ${DEST}"
+info "${C_GREEN}Installed${C_RESET} ${PLACED} ${TAG} → ${DEST}"
 
 # ---- PATH check -------------------------------------------------------------
 case ":${PATH}:" in
   *":${INSTALL_DIR}:"*)
-    info "Run ${C_DIM}${BIN}${C_RESET} to get started."
+    info "Run ${C_DIM}${PLACED}${C_RESET} to get started."
     ;;
   *)
     warn "${INSTALL_DIR} is not on your PATH."

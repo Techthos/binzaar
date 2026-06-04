@@ -23,6 +23,10 @@ type ManifestEntry struct {
 	Repo        string `json:"repo"` // "owner/name"
 	Category    string `json:"category"`
 	DisplayName string `json:"display_name,omitempty"`
+	// Bin optionally overrides the repo's bare name in the placed filename:
+	// the installed binary is "microapp-<Bin>" instead of "microapp-<name>".
+	// The catalog uses this to list microstore itself as "microapp-store".
+	Bin string `json:"bin,omitempty"`
 }
 
 // Template is a catalog-listed starting point for scaffolding a new micro-app.
@@ -68,7 +72,8 @@ type InstalledApp struct {
 	Repo        string    `json:"repo"` // "owner/name" — the bbolt key
 	DisplayName string    `json:"display_name,omitempty"`
 	Category    string    `json:"category,omitempty"`
-	Version     string    `json:"version"` // installed release tag
+	Bin         string    `json:"bin,omitempty"` // manifest bin override, kept so updates re-place at the same filename
+	Version     string    `json:"version"`       // installed release tag
 	AssetName   string    `json:"asset_name"`
 	Path        string    `json:"path"` // absolute path of the placed binary
 	SHA256      string    `json:"sha256"`
