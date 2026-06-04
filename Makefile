@@ -8,7 +8,7 @@ run:
 	$(GO) run .
 
 build:
-	$(GO) build ./...
+	$(GO) build -o microstore .
 
 test:
 	$(GO) test ./... -race -cover
