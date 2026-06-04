@@ -7,6 +7,25 @@ an **MCP stdio server**, backed by an embedded **bbolt** database.
 
 See [`docs/SPECIFICATIONS.md`](docs/SPECIFICATIONS.md) for the full product contract.
 
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Techthos/microstore/refs/heads/main/scripts/install.sh | bash
+```
+
+The installer detects your OS/arch, downloads the latest release binary, verifies its SHA-256
+against the `.sha256` sidecar, and installs it as `microapp-store` into
+`~/.local/share/microstore/bin` (warning if that directory is not on your `PATH`).
+
+Environment overrides:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MICROSTORE_VERSION` | `latest` | Release tag to install (e.g. `v0.2.0`) |
+| `MICROSTORE_INSTALL_DIR` | `~/.local/share/microstore/bin` | Target directory |
+| `MICROSTORE_REPO` | `Techthos/microstore` | `owner/name` to install from |
+| `MICROSTORE_GITHUB_TOKEN` | — | Token for private repos / higher rate limits (`GITHUB_TOKEN` also honored) |
+
 ## Prerequisites
 
 - **Go** (toolchain that satisfies `go.mod`).
