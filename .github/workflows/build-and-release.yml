@@ -1,7 +1,9 @@
 name: Build and Release
 
 # CI on push/PR lives in ci.yml; this workflow only handles version tags:
-# re-run the tests as a release gate, then cross-compile and publish.
+# re-run the tests as a release gate, cross-compile in a matrix, then publish
+# all binaries from a single job (a per-matrix-job release creation races —
+# every leg tries to create the release for the tag at once).
 on:
   push:
     tags: ['v*']
@@ -21,10 +23,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -38,14 +40,11 @@ jobs:
       - name: Build
         run: go build -v .
 
-  release:
-    name: Release
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write   # required to create the release / upload assets
     strategy:
       fail-fast: false
       matrix:
@@ -56,12 +55,10 @@ jobs:
             goarch: arm64
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -82,11 +79,32 @@ jobs:
           go build -trimpath -ldflags="-s -w" -o "${BINARY_NAME}" .
           sha256sum "${BINARY_NAME}" > "${BINARY_NAME}.sha256"
 
-      - name: Upload to release
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: microstore-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: microstore-*
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # required to create the release / upload assets
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
-          files: |
-            microstore-${{ steps.version.outputs.VERSION }}-${{ matrix.goos }}-${{ matrix.goarch }}*
+          files: dist/*
           draft: false
           prerelease: false
           generate_release_notes: true
