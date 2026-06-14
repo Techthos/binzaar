@@ -155,7 +155,26 @@ func New(svc Service) *App {
 	a.updateContext()
 
 	a.app.SetInputCapture(a.globalKeys)
+	a.app.SetMouseCapture(a.mouseCapture)
 	return a
+}
+
+// mouseCapture adds the pointer affordance for UC 13: a double-click on a row in
+// the Installed table launches that app, mirroring the Enter keybinding. A single
+// click only selects (tview's Table fires selection-changed, not selected, on a
+// click), which already updates the detail pane — so double-click is the natural
+// "activate" gesture. Other clicks pass through untouched.
+func (a *App) mouseCapture(ev *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
+	if action == tview.MouseLeftDoubleClick && a.section == pageInstalled {
+		x, y := ev.Position()
+		if a.installed.InRect(x, y) {
+			if ia, ok := a.installedAt(a.currentInstalledRow()); ok {
+				a.runInstalled(ia.Repo)
+				return nil, action
+			}
+		}
+	}
+	return ev, action
 }
 
 // Application exposes the underlying *tview.Application (for headless tests).

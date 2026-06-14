@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gdamore/tcell/v2"
+	"github.com/rivo/tview"
 	"techthos.net/microstore/internal/app"
 	"techthos.net/microstore/internal/install"
 	"techthos.net/microstore/internal/models"
@@ -244,6 +245,86 @@ func TestInstalledEnterRunsHighlightedApp(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		a.Application().Stop()
 		t.Fatal("Enter on the installed row did not trigger RunInstalled within 15s")
+	}
+
+	a.Application().Stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after Stop")
+	}
+}
+
+// TestInstalledDoubleClickRunsApp covers the pointer affordance for UC 13: a
+// double-click inside the Installed table runs the selected app (tview fires only
+// selection-changed on a single click, so run is bound to double-click / Enter).
+func TestInstalledDoubleClickRunsApp(t *testing.T) {
+	ran := make(chan string, 1)
+	a := New(fakeSvc{
+		installed: []models.InstalledApp{{Repo: "o/app", Version: "v1.0.0"}},
+		ranRepo:   ran,
+	})
+
+	sim := tcell.NewSimulationScreen("UTF-8")
+	if err := sim.Init(); err != nil {
+		t.Fatalf("sim init: %v", err)
+	}
+	sim.SetSize(120, 40)
+	a.Application().SetScreen(sim)
+
+	frames := make(chan string, 64)
+	a.Application().SetAfterDrawFunc(func(tcell.Screen) {
+		select {
+		case frames <- screenText(sim):
+		default:
+		}
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- a.Run() }()
+
+	deadline := time.After(15 * time.Second)
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	switched := false
+	for ready := false; !ready; {
+		select {
+		case txt := <-frames:
+			if !switched {
+				a.Application().QueueEvent(tcell.NewEventKey(tcell.KeyRune, '2', tcell.ModNone))
+				switched = true
+			}
+			if strings.Contains(txt, "o/app") {
+				ready = true
+			}
+		case <-tick.C:
+			a.Application().QueueUpdateDraw(func() {})
+		case <-deadline:
+			a.Application().Stop()
+			t.Fatal("installed row not rendered within 15s")
+		}
+	}
+
+	// Synthesize a double-click inside the laid-out installed table, on the event
+	// loop (mouseCapture reads primitives). The run targets the selected row, so
+	// the exact coordinate within the table only needs to land inside its rect.
+	a.Application().QueueUpdate(func() {
+		x, y, _, _ := a.installed.GetRect()
+		ev := tcell.NewEventMouse(x+2, y+2, tcell.ButtonPrimary, tcell.ModNone)
+		a.mouseCapture(ev, tview.MouseLeftDoubleClick)
+	})
+
+	select {
+	case repo := <-ran:
+		if repo != "o/app" {
+			t.Errorf("RunInstalled repo = %q, want o/app", repo)
+		}
+	case <-time.After(15 * time.Second):
+		a.Application().Stop()
+		t.Fatal("double-click on the installed row did not trigger RunInstalled within 15s")
 	}
 
 	a.Application().Stop()

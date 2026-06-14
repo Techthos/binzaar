@@ -201,8 +201,9 @@ Each use-case names the entities, the surface(s), and the repository/service ope
 13. **Run an installed app (launch sub-micro-app).** *Entities:* `InstalledApp`. *Surface:* **TUI
     only** — running a full-screen sub-app requires owning the terminal, which the stdio MCP server
     (whose stdout *is* the protocol channel) cannot do, so there is no MCP tool. From the Installed
-    screen, `Enter` resolves the highlighted install to its recorded binary `Path`, suspends the TUI
-    via `app.Suspend` (the same terminal handoff used for `/product-idea`), and runs the binary with
+    screen, `Enter` (or a double-click on the row) resolves the highlighted install to its recorded
+    binary `Path`, suspends the TUI via `app.Suspend` (the same terminal handoff used for
+    `/product-idea`), and runs the binary with
     inherited stdin/stdout/stderr; when the child exits, the TUI is restored. The path is validated
     before launch — a record whose binary is missing or is a directory yields a clear status error
     and launches nothing. *Ops:* `InstallRepo.Get` + `os.Stat` (path resolution); the process exec
@@ -307,8 +308,8 @@ a **sidebar · body · status-bar** skeleton with four navigable sections, set o
    │            Keys: [i] install (auto-match → verify → download; ambiguous ⇒ asset-pick list),
    │            [Enter] focuses the detail pane, [r] refresh.
 [2] Installed   Master-detail: Table (Repo, Version, Installed-relative, last verify state) left +
-   │            full record (absolute time, path, verify) right. Keys: [Enter] run (app.Suspend →
-   │            exec the binary, restore on exit), [u] update, [d] uninstall (Modal confirm,
+   │            full record (absolute time, path, verify) right. Keys: [Enter]/double-click run
+   │            (app.Suspend → exec the binary, restore on exit), [u] update, [d] uninstall (Modal confirm,
    │            defaults to Cancel), [v] verify, [r] refresh, [Space] multi-select (bulk action
    │            confirms with a count). `/` filter.
 [3] New App     Form: choose Template (from manifest) + Target dir. [Ctrl-S] scaffold ⇒ extract ⇒
@@ -357,9 +358,10 @@ lists, `Ctrl`-chords in forms):
   reachable via `Tab`.
 - **Catalog:** `i` installs the selected app (auto-match → verify → download; on ambiguity a
   selectable asset list appears). The detail pane updates as the selection moves.
-- **Installed:** `Enter` runs the highlighted app — it suspends the TUI (`app.Suspend`) and execs
-  the recorded binary with inherited stdin/stdout/stderr, restoring the TUI when the child exits
-  (UC 13). `u` update, `d` uninstall (confirm via `Modal` defaulting to Cancel; the wording names
+- **Installed:** `Enter` (or a double-click on the row) runs the highlighted app — it suspends the
+  TUI (`app.Suspend`) and execs the recorded binary with inherited stdin/stdout/stderr, restoring
+  the TUI when the child exits (UC 13). A single click only selects (updating the detail pane).
+  `u` update, `d` uninstall (confirm via `Modal` defaulting to Cancel; the wording names
   the target or the count), `v` re-verify; `Space` toggles a per-row check and `u`/`d`/`v` then
   apply to all checked rows (single batch confirm) — or to the highlighted row when none are
   checked. Results update the row and the detail pane.
@@ -414,10 +416,11 @@ lists, `Ctrl`-chords in forms):
 - **UC 13 — Run installed app (TUI only):** `RunInstalled(repo)` returns the recorded absolute `Path`
   for a tracked install whose binary exists as a regular file. An unknown slug yields a clear "not
   installed" error; a record whose binary is missing or is a directory yields an error naming the
-  path — in every error case nothing is executed. On the Installed screen, `Enter` resolves the
-  highlighted row through `RunInstalled`, then suspends the TUI (`app.Suspend`) and runs the binary
-  with inherited stdin/stdout/stderr; when the child exits the TUI is restored and the status bar
-  reports the return. No MCP tool exposes this (the stdio server cannot own a terminal). No bbolt
+  path — in every error case nothing is executed. On the Installed screen, `Enter` or a double-click
+  on the row resolves the highlighted row through `RunInstalled`, then suspends the TUI
+  (`app.Suspend`) and runs the binary with inherited stdin/stdout/stderr; when the child exits the
+  TUI is restored and the status bar reports the return. (A single click only selects the row.) No
+  MCP tool exposes this (the stdio server cannot own a terminal). No bbolt
   write occurs.
 - **`init` mode:** In a directory with no `.claude` entry, `microstore init` places the embedded
   bootstrap kit byte-for-byte (`.claude/commands`, `.claude/rules`, `.claude/skills`) and prints the
