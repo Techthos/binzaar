@@ -87,7 +87,8 @@ func pathWarningText(st app.PathStatus) string {
 	return fmt.Sprintf(
 		"Install dir is not on your PATH:\n\n  %s\n\nInstalled apps won't be runnable from your shell until it is.\n"+
 			"Add this line to %s?\n\n  %s",
-		st.InstallDir, st.ProfilePath, st.ExportLine)
+		st.InstallDir, st.ProfilePath, st.ExportLine,
+	)
 }
 
 func nextPage(cur string) string { return cyclePage(cur, +1) }

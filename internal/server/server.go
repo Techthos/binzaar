@@ -19,7 +19,8 @@ type handler struct {
 
 // New builds the microstore MCP server with all tools and resources registered.
 func New(svc *app.Service, name, version string) *server.MCPServer {
-	s := server.NewMCPServer(name, version,
+	s := server.NewMCPServer(
+		name, version,
 		server.WithToolCapabilities(true),
 		server.WithResourceCapabilities(false, false),
 		server.WithRecovery(),

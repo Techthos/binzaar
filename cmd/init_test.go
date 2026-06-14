@@ -56,6 +56,9 @@ func TestRunInit(t *testing.T) {
 
 	// The closing message explains the phases in order.
 	msg := out.String()
+	if !strings.HasPrefix(msg, "Initialized") {
+		t.Errorf("fresh init should report %q, got:\n%s", "Initialized", msg)
+	}
 	for _, phrase := range []string{"/product-idea", "/app-init", "/app-spec-sync", "build-and-release"} {
 		if !strings.Contains(msg, phrase) {
 			t.Errorf("init output should mention %q\noutput:\n%s", phrase, msg)
@@ -66,17 +69,81 @@ func TestRunInit(t *testing.T) {
 	}
 }
 
-func TestRunInitRefusesExistingSetup(t *testing.T) {
+func TestRunInitUpdatesExistingSetup(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(dir, ".claude"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+
+	// Place the kit once, then locally edit a shipped file and add an extra.
+	var first strings.Builder
+	if err := runInit(dir, &first); err != nil {
+		t.Fatalf("first runInit: %v", err)
+	}
+
+	kit := templates.ClaudeCode()
+	// Pick any shipped file to clobber, then assert update restores it.
+	var shipped string
+	err := fs.WalkDir(kit, ".", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && shipped == "" {
+			shipped = path
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatalf("walk kit: %v", err)
+	}
+	if shipped == "" {
+		t.Fatal("embedded kit is empty")
+	}
+	shippedPath := filepath.Join(dir, filepath.FromSlash(shipped))
+	if err := os.WriteFile(shippedPath, []byte("LOCAL EDIT"), 0o644); err != nil {
+		t.Fatalf("clobber shipped file: %v", err)
+	}
+
+	// A user-added file under the kit's tree must survive the update.
+	extraPath := filepath.Join(dir, ".claude", "rules", "my-custom-rule.md")
+	if err := os.WriteFile(extraPath, []byte("KEEP ME"), 0o644); err != nil {
+		t.Fatalf("write extra file: %v", err)
+	}
+
+	var second strings.Builder
+	if err := runInit(dir, &second); err != nil {
+		t.Fatalf("second runInit: %v", err)
+	}
+
+	// The shipped file is refreshed back to the embedded version.
+	want, err := fs.ReadFile(kit, shipped)
+	if err != nil {
+		t.Fatalf("read embedded %s: %v", shipped, err)
+	}
+	got, err := os.ReadFile(shippedPath)
+	if err != nil {
+		t.Fatalf("read placed %s: %v", shipped, err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("update did not refresh %s to embedded content", shipped)
+	}
+
+	// The user-added file is left untouched.
+	if got, err := os.ReadFile(extraPath); err != nil || string(got) != "KEEP ME" {
+		t.Errorf("update should keep user file: got %q, err %v", got, err)
+	}
+
+	if msg := second.String(); !strings.HasPrefix(msg, "Updated") {
+		t.Errorf("update should report %q, got:\n%s", "Updated", msg)
+	}
+}
+
+func TestRunInitRefusesNonDirectoryClaude(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".claude"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
 	}
 
 	var out strings.Builder
 	err := runInit(dir, &out)
-	if err == nil || !strings.Contains(err.Error(), ".claude already exists") {
-		t.Fatalf("err = %v, want refusal mentioning existing .claude", err)
+	if err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("err = %v, want refusal mentioning non-directory .claude", err)
 	}
 	if out.Len() != 0 {
 		t.Errorf("no success output expected on refusal, got:\n%s", out.String())
