@@ -74,6 +74,20 @@ func (s *Service) GetConfig() (models.Config, error) { return s.cfg.Load() }
 // SetConfig persists the configuration.
 func (s *Service) SetConfig(c models.Config) error { return s.cfg.Save(c) }
 
+// SaveUIPrefs persists only the TUI view preferences (last active section and
+// sidebar collapsed state), leaving ManifestURL/InstallDir untouched. It mirrors
+// MergeConfig: load-overlay-save, so a preference write from the TUI never
+// clobbers the store settings (and a store-settings write never clobbers these).
+func (s *Service) SaveUIPrefs(lastSection string, sidebarCollapsed bool) error {
+	cur, err := s.cfg.Load()
+	if err != nil {
+		return err
+	}
+	cur.LastSection = lastSection
+	cur.SidebarCollapsed = sidebarCollapsed
+	return s.cfg.Save(cur)
+}
+
 // PathStatus reports whether the configured InstallDir is reachable on the
 // current process PATH and, when it is not, the shell profile and the exact
 // export line that would put it there. microstore never rewrites PATH on its own

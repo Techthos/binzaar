@@ -130,6 +130,38 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSaveUIPrefs(t *testing.T) {
+	t.Parallel()
+	svc := app.New(&fakeGH{}, newStore(t))
+	// Store-settings written first.
+	if err := svc.SetConfig(models.Config{ManifestURL: "https://m", InstallDir: "/d"}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	// Saving view-prefs must not clobber ManifestURL/InstallDir.
+	if err := svc.SaveUIPrefs("installed", true); err != nil {
+		t.Fatalf("SaveUIPrefs: %v", err)
+	}
+	got, err := svc.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	want := models.Config{ManifestURL: "https://m", InstallDir: "/d", LastSection: "installed", SidebarCollapsed: true}
+	if got != want {
+		t.Errorf("config = %+v, want %+v", got, want)
+	}
+	// A subsequent store-settings save (MergeConfig) must preserve the view-prefs.
+	if _, err := svc.MergeConfig("https://m2", ""); err != nil {
+		t.Fatalf("MergeConfig: %v", err)
+	}
+	got, _ = svc.GetConfig()
+	if got.LastSection != "installed" || !got.SidebarCollapsed {
+		t.Errorf("view-prefs lost after MergeConfig: %+v", got)
+	}
+	if got.ManifestURL != "https://m2" {
+		t.Errorf("ManifestURL = %q, want updated", got.ManifestURL)
+	}
+}
+
 func TestPathStatus(t *testing.T) {
 	// t.Setenv forbids t.Parallel.
 	store := newStore(t)

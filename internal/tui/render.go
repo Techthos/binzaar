@@ -9,75 +9,133 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"techthos.net/microstore/internal/app"
 	"techthos.net/microstore/internal/models"
 )
 
-// Page identifiers within the root Pages primitive.
+// emDash is the dim placeholder for an empty/missing value (never blank, never
+// "null"), per the shared design language.
+const emDash = "—"
+
+// Page identifiers within the body Pages primitive. The first group are the
+// navigable sidebar sections; the second are transient overlays layered on top.
 const (
 	pageCatalog   = "catalog"
-	pageDetail    = "detail"
 	pageInstalled = "installed"
 	pageNew       = "new"
 	pageConfig    = "config"
+
 	pageAssetPick = "assetpick"
 	pageConfirm   = "confirm"
 	pageWarnPath  = "warnpath"
+	pageHelp      = "help"
 )
 
-// pageOrder is the Tab-cycle order of the primary screens.
-var pageOrder = []string{pageCatalog, pageDetail, pageInstalled, pageNew, pageConfig}
+// sectionOrder is the sidebar's top-to-bottom order; the 1-based position is the
+// numeric shortcut (1–4) that jumps to each section.
+var sectionOrder = []string{pageCatalog, pageInstalled, pageNew, pageConfig}
 
-// tabLabels is the human label shown for each primary page in the tab bar. The
-// 1-based position in pageOrder doubles as the quick-switch number key.
-var tabLabels = map[string]string{
+// sectionTitles is the human label for each navigable section.
+var sectionTitles = map[string]string{
 	pageCatalog:   "Catalog",
-	pageDetail:    "Detail",
 	pageInstalled: "Installed",
 	pageNew:       "New App",
 	pageConfig:    "Config",
 }
 
-// headerText is the static brand bar drawn above the tabs.
-const headerText = "[" + tagAccent + "::b] ◆ microstore " + keyClose +
-	" [" + tagDim + "]local app store for Go micro-apps[-]"
+// isSection reports whether page is a navigable sidebar section (not an overlay).
+func isSection(page string) bool {
+	_, ok := sectionTitles[page]
+	return ok
+}
 
-// tabsText renders the top tab bar as dynamic-color markup, highlighting the
-// active page. The leading number matches the 1-5 quick-switch keys.
-func tabsText(active string) string {
-	parts := make([]string, 0, len(pageOrder))
-	for i, p := range pageOrder {
-		label := fmt.Sprintf(" %d %s ", i+1, tabLabels[p])
-		if p == active {
-			parts = append(parts, "["+hexBg+":"+tagAccent+":b]"+label+"[-:-:-]")
-		} else {
-			parts = append(parts, "["+tagAccent+"]"+label+"[-]")
+// sectionIndex returns the 0-based position of a section in sectionOrder, or -1.
+func sectionIndex(page string) int {
+	for i, s := range sectionOrder {
+		if s == page {
+			return i
 		}
 	}
-	return strings.Join(parts, " ")
+	return -1
 }
 
-// hintFor returns the context-sensitive keybinding hints for a page, shown in
-// the footer hint bar so every shortcut is discoverable on screen.
-func hintFor(page string) string {
-	global := k("1-5") + "/" + k("Tab") + " switch  " + k("q") + " quit"
-	switch page {
-	case pageCatalog:
-		return k("↑↓") + " move  " + k("Enter") + " details  " + k("/") + " search  " + global
-	case pageDetail:
-		return k("i") + " install  " + k("Esc") + " back  " + global
-	case pageInstalled:
-		return k("u") + " update  " + k("x") + " uninstall  " + k("v") + " verify  " + global
-	case pageNew:
-		return k("↑↓") + " fields  " + k("Enter") + " scaffold  " + global
-	case pageConfig:
-		return k("↑↓") + " fields  " + k("Enter") + " save  " + global
+// screenTitle is the body header text for a section.
+func screenTitle(section string) string {
+	if t, ok := sectionTitles[section]; ok {
+		return t
 	}
-	return global
+	return "microstore"
 }
 
-// k wraps a keybinding glyph in the accent+bold key style for the hint bar.
+// sidebarItems renders the sidebar labels: a numeric shortcut, the section title,
+// an optional dim count, and an attention badge (●) when a section needs it. The
+// active section is highlighted by the List's own selection, not here.
+func sidebarItems(counts map[string]int, badges map[string]bool) []string {
+	items := make([]string, len(sectionOrder))
+	for i, s := range sectionOrder {
+		label := fmt.Sprintf("%d  %s", i+1, sectionTitles[s])
+		if n, ok := counts[s]; ok {
+			label += fmt.Sprintf("  [%s]%d[-]", tagDim, n)
+		}
+		if badges[s] {
+			label += "  [" + tagWarn + "]●[-]"
+		}
+		items[i] = label
+	}
+	return items
+}
+
+// statusHints returns the few most relevant keys for a section, always ending in
+// "? help", for the right zone of the status bar.
+func statusHints(section string) string {
+	help := k("?") + " help"
+	switch section {
+	case pageCatalog:
+		return k("↑↓") + " move  " + k("Enter") + " detail  " + k("i") + " install  " +
+			k("/") + " filter  " + k("r") + " refresh  " + help
+	case pageInstalled:
+		return k("↑↓") + " move  " + k("u") + " update  " + k("d") + " uninstall  " +
+			k("v") + " verify  " + k("Space") + " select  " + k("/") + " filter  " + help
+	case pageNew:
+		return k("↑↓") + " fields  " + k("Ctrl-S") + " scaffold  " + k("Esc") + " cancel  " + help
+	case pageConfig:
+		return k("↑↓") + " fields  " + k("Ctrl-S") + " save  " + k("Esc") + " cancel  " + help
+	}
+	return help
+}
+
+// helpText renders the full keybinding vocabulary for the ? overlay.
+func helpText() string {
+	rows := [][2]string{
+		{"1–4", "jump to section"},
+		{"↑ ↓ / j k", "move selection"},
+		{"Enter", "open / confirm"},
+		{"Esc", "back / cancel"},
+		{"Tab / Shift-Tab", "cycle focus"},
+		{"Ctrl-B", "toggle sidebar"},
+		{"/", "filter list"},
+		{"i", "install (Catalog)"},
+		{"u", "update (Installed)"},
+		{"d", "uninstall (Installed)"},
+		{"v", "verify (Installed)"},
+		{"r", "refresh list"},
+		{"Space", "toggle row select"},
+		{"Ctrl-S", "save (forms)"},
+		{"?", "this help"},
+		{"q / Ctrl-C", "quit"},
+	}
+	var b strings.Builder
+	b.WriteString("[" + tagAccent + "::b]microstore — keys[-]\n\n")
+	for _, r := range rows {
+		fmt.Fprintf(&b, "  ["+tagAccent+"::b]%-16s[-] %s\n", r[0], r[1])
+	}
+	b.WriteString("\n[" + tagDim + "]Esc or ? to close[-]")
+	return b.String()
+}
+
+// k wraps a keybinding glyph in the accent+bold key style for the status bar.
 func k(glyph string) string { return keyOpen + glyph + keyClose }
 
 // pathWarningText renders the launch-time warning shown when InstallDir is not
@@ -89,19 +147,6 @@ func pathWarningText(st app.PathStatus) string {
 			"Add this line to %s?\n\n  %s",
 		st.InstallDir, st.ProfilePath, st.ExportLine,
 	)
-}
-
-func nextPage(cur string) string { return cyclePage(cur, +1) }
-func prevPage(cur string) string { return cyclePage(cur, -1) }
-
-func cyclePage(cur string, delta int) string {
-	for i, p := range pageOrder {
-		if p == cur {
-			n := (i + delta + len(pageOrder)) % len(pageOrder)
-			return pageOrder[n]
-		}
-	}
-	return pageCatalog
 }
 
 var catalogHeader = []string{"Name", "Repo", "Category"}
@@ -131,8 +176,23 @@ func categoryTag(cat string) string {
 
 var installedHeader = []string{"Repo", "Version", "Installed", "Verify"}
 
-func installedRow(a models.InstalledApp, verify string) []string {
-	return []string{a.Repo, a.Version, a.InstalledAt.Format("2006-01-02"), verifyCell(verify)}
+// installedRow is one Installed-table row. Per the design standards, list views
+// show the timestamp relative to now; the absolute time lives in the detail pane.
+func installedRow(a models.InstalledApp, verify string, now time.Time) []string {
+	return []string{a.Repo, a.Version, relTime(a.InstalledAt, now), verifyCell(verify)}
+}
+
+// installedDetailText renders the full record for an installed app in the detail
+// pane: absolute timestamp, path, and verify state (field order matches the row).
+func installedDetailText(a models.InstalledApp, verify string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "["+tagAccent+"::b]%s"+keyClose+"\n\n", orDash(a.Repo))
+	fmt.Fprintf(&b, "["+tagAccent2+"::b]Version:"+keyClose+"   %s\n", orDash(a.Version))
+	fmt.Fprintf(&b, "["+tagAccent2+"::b]Installed:"+keyClose+" %s\n", absTime(a.InstalledAt))
+	fmt.Fprintf(&b, "["+tagAccent2+"::b]Asset:"+keyClose+"     %s\n", orDash(a.AssetName))
+	fmt.Fprintf(&b, "["+tagAccent2+"::b]Path:"+keyClose+"      %s\n", orDash(a.Path))
+	fmt.Fprintf(&b, "["+tagAccent2+"::b]Verify:"+keyClose+"    %s\n", verifyCell(verify))
+	return b.String()
 }
 
 // verifyCell maps a re-verification status to a colored glyph + label for the
@@ -146,8 +206,35 @@ func verifyCell(status string) string {
 	case "missing":
 		return "[" + tagBad + "]✗ missing[-]"
 	default:
-		return "[" + tagDim + "]– not checked[-]"
+		return "[" + tagDim + "]" + emDash + " not checked[-]"
 	}
+}
+
+// relTime renders a short relative age ("just now", "5m ago", "2h ago",
+// "3d ago") for list cells. now is passed in so the helper stays pure/testable.
+func relTime(t, now time.Time) string {
+	if t.IsZero() {
+		return emDash
+	}
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
+// absTime renders an absolute timestamp for the detail pane, or a dim em-dash.
+func absTime(t time.Time) string {
+	if t.IsZero() {
+		return emDash
+	}
+	return t.Format("2006-01-02 15:04")
 }
 
 // filterApps applies the catalog's in-memory search: free-text on name/repo
@@ -163,6 +250,23 @@ func filterApps(apps []models.ManifestEntry, query, category string) []models.Ma
 			continue
 		}
 		out = append(out, e)
+	}
+	return out
+}
+
+// filterInstalled applies the installed list's in-memory filter: a
+// case-insensitive substring across the visible columns (repo, version). An
+// empty query matches everything.
+func filterInstalled(apps []models.InstalledApp, query string) []models.InstalledApp {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return apps
+	}
+	var out []models.InstalledApp
+	for _, a := range apps {
+		if strings.Contains(strings.ToLower(a.Repo), q) || strings.Contains(strings.ToLower(a.Version), q) {
+			out = append(out, a)
+		}
 	}
 	return out
 }
@@ -224,7 +328,7 @@ func detailText(d app.AppDetails) string {
 
 func orDash(s string) string {
 	if s == "" {
-		return "-"
+		return emDash
 	}
 	return s
 }

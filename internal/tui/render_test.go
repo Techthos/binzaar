@@ -28,17 +28,58 @@ func TestCatalogRow(t *testing.T) {
 
 func TestInstalledRow(t *testing.T) {
 	t.Parallel()
-	ia := models.InstalledApp{Repo: "o/a", Version: "v1", InstalledAt: time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC)}
-	got := installedRow(ia, "")
-	if got[0] != "o/a" || got[1] != "v1" || got[2] != "2026-05-28" {
+	now := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
+	ia := models.InstalledApp{Repo: "o/a", Version: "v1", InstalledAt: now.Add(-2 * time.Hour)}
+	got := installedRow(ia, "", now)
+	// Lists show the timestamp relative to now (absolute lives in the detail pane).
+	if got[0] != "o/a" || got[1] != "v1" || got[2] != "2h ago" {
 		t.Errorf("installedRow = %v", got)
 	}
 	// Empty status renders the muted "not checked" cell; "ok" renders verified.
 	if !strings.Contains(got[3], "not checked") {
 		t.Errorf("empty verify = %q, want not checked", got[3])
 	}
-	if !strings.Contains(installedRow(ia, "ok")[3], "verified") {
-		t.Errorf("ok verify not rendered: %q", installedRow(ia, "ok")[3])
+	if !strings.Contains(installedRow(ia, "ok", now)[3], "verified") {
+		t.Errorf("ok verify not rendered: %q", installedRow(ia, "ok", now)[3])
+	}
+}
+
+func TestRelTime(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name string
+		t    time.Time
+		want string
+	}{
+		{"zero", time.Time{}, emDash},
+		{"just now", now.Add(-10 * time.Second), "just now"},
+		{"minutes", now.Add(-5 * time.Minute), "5m ago"},
+		{"hours", now.Add(-3 * time.Hour), "3h ago"},
+		{"days", now.Add(-48 * time.Hour), "2d ago"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := relTime(tc.t, now); got != tc.want {
+				t.Errorf("relTime = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestInstalledDetailText(t *testing.T) {
+	t.Parallel()
+	ia := models.InstalledApp{
+		Repo: "o/a", Version: "v1", AssetName: "bin-linux", Path: "/bin/x",
+		InstalledAt: time.Date(2026, 5, 28, 9, 30, 0, 0, time.UTC),
+	}
+	txt := installedDetailText(ia, "ok")
+	// The detail pane carries the absolute timestamp and the full record.
+	for _, want := range []string{"o/a", "v1", "2026-05-28 09:30", "bin-linux", "/bin/x", "verified"} {
+		if !strings.Contains(txt, want) {
+			t.Errorf("installedDetailText missing %q in:\n%s", want, txt)
+		}
 	}
 }
 
@@ -84,35 +125,53 @@ func TestDistinctCategories(t *testing.T) {
 	}
 }
 
-func TestTabsText(t *testing.T) {
+func TestSidebarItems(t *testing.T) {
 	t.Parallel()
-	got := tabsText(pageInstalled)
-	for _, want := range []string{"1 Catalog", "3 Installed", "5 Config"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("tabsText missing %q in:\n%s", want, got)
-		}
+	items := sidebarItems(
+		map[string]int{pageCatalog: 12, pageInstalled: 3},
+		map[string]bool{pageInstalled: true},
+	)
+	if len(items) != len(sectionOrder) {
+		t.Fatalf("got %d items, want %d", len(items), len(sectionOrder))
 	}
-	// The active page is highlighted with dark text on the accent background.
-	if !strings.Contains(got, "["+hexBg+":"+tagAccent+":b] 3 Installed ") {
-		t.Errorf("active tab not highlighted: %s", got)
+	// Numbered shortcuts and the count appear; Installed carries the attention badge.
+	if !strings.Contains(items[0], "1") || !strings.Contains(items[0], "Catalog") || !strings.Contains(items[0], "12") {
+		t.Errorf("catalog item = %q", items[0])
+	}
+	if !strings.Contains(items[1], "Installed") || !strings.Contains(items[1], "●") {
+		t.Errorf("installed item missing badge: %q", items[1])
+	}
+	// No badge where none requested.
+	if strings.Contains(items[2], "●") {
+		t.Errorf("new-app item should have no badge: %q", items[2])
 	}
 }
 
-func TestHintFor(t *testing.T) {
+func TestStatusHints(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		pageCatalog:   "search",
-		pageDetail:    "install",
+		pageCatalog:   "install",
 		pageInstalled: "uninstall",
 		pageNew:       "scaffold",
 		pageConfig:    "save",
 	}
 	for page, want := range cases {
-		if h := hintFor(page); !strings.Contains(h, want) {
-			t.Errorf("hintFor(%q) missing %q in %q", page, want, h)
+		h := statusHints(page)
+		if !strings.Contains(h, want) {
+			t.Errorf("statusHints(%q) missing %q in %q", page, want, h)
 		}
-		if h := hintFor(page); !strings.Contains(h, "quit") {
-			t.Errorf("hintFor(%q) missing global quit hint", page)
+		if !strings.Contains(h, "help") {
+			t.Errorf("statusHints(%q) must end in the help hint: %q", page, h)
+		}
+	}
+}
+
+func TestHelpText(t *testing.T) {
+	t.Parallel()
+	got := helpText()
+	for _, want := range []string{"jump to section", "toggle sidebar", "filter", "uninstall", "save", "quit"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("helpText missing %q", want)
 		}
 	}
 }
@@ -132,22 +191,37 @@ func TestPathWarningText(t *testing.T) {
 	}
 }
 
-func TestNextPrevPage(t *testing.T) {
+func TestSections(t *testing.T) {
 	t.Parallel()
-	if nextPage(pageCatalog) != pageDetail {
-		t.Errorf("next(catalog) = %q", nextPage(pageCatalog))
+	// The navigable sections are the four sidebar entries; Detail is not one.
+	if isSection(pageCatalog) != true || isSection("detail") != false {
+		t.Errorf("isSection wrong: catalog=%v detail=%v", isSection(pageCatalog), isSection("detail"))
 	}
-	if nextPage(pageNew) != pageConfig {
-		t.Errorf("next(new) = %q, want config", nextPage(pageNew))
+	if sectionIndex(pageConfig) != 3 {
+		t.Errorf("sectionIndex(config) = %d, want 3", sectionIndex(pageConfig))
 	}
-	if nextPage(pageConfig) != pageCatalog {
-		t.Errorf("next wraps to catalog, got %q", nextPage(pageConfig))
+	if sectionIndex("nope") != -1 {
+		t.Errorf("unknown section index should be -1")
 	}
-	if prevPage(pageCatalog) != pageConfig {
-		t.Errorf("prev wraps to config, got %q", prevPage(pageCatalog))
+	if screenTitle(pageNew) != "New App" {
+		t.Errorf("screenTitle(new) = %q", screenTitle(pageNew))
 	}
-	if nextPage("unknown") != pageCatalog {
-		t.Errorf("unknown falls back to catalog")
+}
+
+func TestFilterInstalled(t *testing.T) {
+	t.Parallel()
+	apps := []models.InstalledApp{
+		{Repo: "o/alpha", Version: "v1"},
+		{Repo: "o/beta", Version: "v2"},
+	}
+	if got := filterInstalled(apps, ""); len(got) != 2 {
+		t.Errorf("empty query = %d, want 2", len(got))
+	}
+	if got := filterInstalled(apps, "alph"); len(got) != 1 || got[0].Repo != "o/alpha" {
+		t.Errorf("repo query = %v", got)
+	}
+	if got := filterInstalled(apps, "V2"); len(got) != 1 || got[0].Repo != "o/beta" {
+		t.Errorf("version query (case-insensitive) = %v", got)
 	}
 }
 

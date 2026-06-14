@@ -71,17 +71,35 @@ func sha(b []byte) string {
 	return hex.EncodeToString(s[:])
 }
 
-func newClient(t *testing.T, gh app.Cataloger, manifestURL string) *client.Client {
+func newStore(t *testing.T) *db.Store {
 	t.Helper()
 	store, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
+	return store
+}
+
+func newClient(t *testing.T, gh app.Cataloger, manifestURL string) *client.Client {
+	t.Helper()
+	store := newStore(t)
 	svc := app.New(gh, store)
 	if err := svc.SetConfig(models.Config{ManifestURL: manifestURL, InstallDir: t.TempDir()}); err != nil {
 		t.Fatalf("SetConfig: %v", err)
 	}
+	return startClient(t, svc)
+}
+
+// newClientWithStore wires a client to a caller-seeded store (so the test can
+// pre-populate the Config without SetConfig overwriting it).
+func newClientWithStore(t *testing.T, gh app.Cataloger, store *db.Store) *client.Client {
+	t.Helper()
+	return startClient(t, app.New(gh, store))
+}
+
+func startClient(t *testing.T, svc *app.Service) *client.Client {
+	t.Helper()
 	c, err := client.NewInProcessClient(server.New(svc, "microstore-test", "0.0.0"))
 	if err != nil {
 		t.Fatalf("new in-process client: %v", err)
@@ -205,6 +223,29 @@ func TestConfigTools(t *testing.T) {
 	}](t, call(t, c, "get_config", nil))
 	if got.Config.ManifestURL != "https://m/catalog.json" {
 		t.Errorf("get_config ManifestURL = %q, want persisted value", got.Config.ManifestURL)
+	}
+}
+
+// TestSetConfigPreservesUIPrefs locks the contract that set_config (MergeConfig)
+// never disturbs the TUI view-prefs persisted in the same Config singleton.
+func TestSetConfigPreservesUIPrefs(t *testing.T) {
+	t.Parallel()
+	store := newStore(t)
+	if err := store.Config().Save(models.Config{ManifestURL: "https://old", InstallDir: "/d", LastSection: "config", SidebarCollapsed: true}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	c := newClientWithStore(t, &fakeGH{}, store)
+	call(t, c, "set_config", map[string]any{"manifest_url": "https://new/catalog.json"})
+
+	got, err := store.Config().Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.ManifestURL != "https://new/catalog.json" {
+		t.Errorf("ManifestURL = %q, want updated", got.ManifestURL)
+	}
+	if got.LastSection != "config" || !got.SidebarCollapsed {
+		t.Errorf("set_config clobbered view-prefs: %+v", got)
 	}
 }
 

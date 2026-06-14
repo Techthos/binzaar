@@ -66,3 +66,13 @@ func selectedStyle() tcell.Style {
 		Foreground(tcell.GetColor(hexBg)).
 		Bold(true)
 }
+
+// sidebarSelectedStyle highlights the active sidebar section. It keeps the
+// accent on the resting background (rather than inverting like a table row) so
+// the active section stays visible even when focus is on the body table.
+func sidebarSelectedStyle() tcell.Style {
+	return tcell.StyleDefault.
+		Background(tcell.GetColor(hexBgAlt)).
+		Foreground(tcell.GetColor(hexAccent)).
+		Bold(true)
+}

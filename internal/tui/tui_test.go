@@ -39,30 +39,56 @@ func (fakeSvc) Scaffold(context.Context, string, string, string, bool) (app.Scaf
 }
 func (fakeSvc) GetConfig() (models.Config, error) { return models.Config{}, nil }
 func (fakeSvc) SetConfig(models.Config) error     { return nil }
+func (fakeSvc) SaveUIPrefs(string, bool) error    { return nil }
 func (f fakeSvc) PathStatus() (app.PathStatus, error) {
 	return f.pathStatus, nil
 }
 func (fakeSvc) AddToPath() (app.PathStatus, error) { return app.PathStatus{}, nil }
 
-func TestNewBuildsPages(t *testing.T) {
+func TestNewBuildsSections(t *testing.T) {
 	t.Parallel()
 	a := New(fakeSvc{})
-	for _, p := range []string{pageCatalog, pageDetail, pageInstalled, pageNew, pageConfig} {
+	for _, p := range sectionOrder {
 		if !a.pages.HasPage(p) {
-			t.Errorf("missing page %q", p)
+			t.Errorf("missing section page %q", p)
 		}
+	}
+	// Detail is now a master-detail pane, not a standalone section page.
+	if a.pages.HasPage("detail") {
+		t.Error("detail should not be a standalone section page")
 	}
 	if front, _ := a.pages.GetFrontPage(); front != pageCatalog {
 		t.Errorf("front page = %q, want catalog", front)
 	}
 }
 
-func TestNavigationCyclesAcrossPages(t *testing.T) {
+func TestSwitchToSection(t *testing.T) {
 	t.Parallel()
 	a := New(fakeSvc{})
-	a.switchTo(nextPage(pageCatalog))
-	if front, _ := a.pages.GetFrontPage(); front != pageDetail {
-		t.Errorf("after Tab from catalog, front = %q, want detail", front)
+	a.switchTo(pageInstalled)
+	if front, _ := a.pages.GetFrontPage(); front != pageInstalled {
+		t.Errorf("after switchTo(installed), front = %q", front)
+	}
+	if a.section != pageInstalled {
+		t.Errorf("active section = %q, want installed", a.section)
+	}
+	// Switching to a non-section (overlay) id is a no-op.
+	a.switchTo(pageHelp)
+	if a.section != pageInstalled {
+		t.Errorf("switchTo(non-section) changed section to %q", a.section)
+	}
+}
+
+func TestShowHelpOverlay(t *testing.T) {
+	t.Parallel()
+	a := New(fakeSvc{})
+	a.showHelp()
+	if front, _ := a.pages.GetFrontPage(); front != pageHelp {
+		t.Errorf("front page = %q, want help", front)
+	}
+	a.hideHelp()
+	if a.pages.HasPage(pageHelp) {
+		t.Error("help overlay not removed after hide")
 	}
 }
 
@@ -181,7 +207,8 @@ func TestRendersAndQuitsHeadless(t *testing.T) {
 	for found := false; !found; {
 		select {
 		case txt := <-frames:
-			if strings.Contains(txt, "Search") {
+			// The sidebar/header/border all carry the "Catalog" section label.
+			if strings.Contains(txt, "Catalog") {
 				found = true
 			}
 		case <-deadline:

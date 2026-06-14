@@ -89,7 +89,7 @@ storage-agnostic (no bbolt imports). Serialization is **JSON** throughout.
 | Entity | Identity | Key attributes |
 |---|---|---|
 | `InstalledApp` | `Repo` (`owner/name`) — natural unique key | `Repo`, `DisplayName`, `Category`, `Bin` (manifest override, kept so updates re-place at the same filename), `Version` (installed tag), `AssetName`, `Path` (absolute), `SHA256`, `Size`, `InstalledAt` (time), `SourceURL` |
-| `Config` | singleton | `ManifestURL`, `InstallDir` |
+| `Config` | singleton | `ManifestURL`, `InstallDir`; plus TUI view-prefs `LastSection`, `SidebarCollapsed` |
 
 ### Relationships
 
@@ -98,7 +98,7 @@ Catalog ─┬─ many ManifestEntry  ──(repo)──>  GitHub repo ──> m
          └─ many Template        ──(repo,ref)──> GitHub tarball
 
 InstalledApp.Repo  ──references──>  the ManifestEntry/repo it came from (by slug; no FK enforced)
-Config             ──singleton──>   owns ManifestURL + InstallDir
+Config             ──singleton──>   owns ManifestURL + InstallDir + TUI view-prefs
 ```
 
 - An installed app corresponds to exactly one catalog repo (by slug) and exactly one downloaded
@@ -155,7 +155,11 @@ Each use-case names the entities, the surface(s), and the repository/service ope
 1. **Configure store (first-run + edit).** *Entities:* `Config`. *Surfaces:* TUI, MCP. On first run,
    apply defaults: `InstallDir = ~/.local/share/microstore/bin`, `ManifestURL` = the curated catalog
    published from this repo (`https://raw.githubusercontent.com/Techthos/microstore/main/catalog.json`).
-   The user may change either from the Config screen / `set_config`. *Ops:* `ConfigRepo.Load/Save`.
+   The user may change either from the Config screen / `set_config`. The same singleton also holds
+   two lightweight TUI **view preferences** — `LastSection` (the section the app reopens on) and
+   `SidebarCollapsed` — written only by the TUI (so the app reopens where it was left); `get_config`
+   returns them, and `set_config` never modifies them. *Ops:* `ConfigRepo.Load/Save`,
+   `Service.SaveUIPrefs`.
 2. **List / refresh catalog.** *Entities:* `Catalog`, `ManifestEntry`. *Surfaces:* TUI, MCP. Fetch
    `ManifestURL` live and return app entries. *Ops:* GitHub-client fetch; no bbolt.
 3. **Search / filter catalog.** *Entities:* `ManifestEntry`. *Surfaces:* TUI, MCP. In-memory filter of
@@ -233,7 +237,7 @@ Non-trivial inputs use typed handlers with `jsonschema`-tagged structs. **All lo
 | Tool | Purpose (UC) | Input | Output |
 |---|---|---|---|
 | `get_config` | Read store config (UC 1) | — | `{ config: Config }` |
-| `set_config` | Update store config; empty fields unchanged (UC 1) | `{ manifest_url?: string, install_dir?: string }` | `{ config: Config }` |
+| `set_config` | Update store config; empty fields unchanged; TUI view-prefs untouched (UC 1) | `{ manifest_url?: string, install_dir?: string }` | `{ config: Config }` |
 | `list_catalog` | List catalog app entries (UC 2) | — | `{ apps: ManifestEntry[] }` |
 | `search_apps` | Filter catalog (UC 3) | `{ query?: string, category?: string }` | `{ apps: ManifestEntry[] }` |
 | `app_details` | Repo info + latest release + assets + install state (UC 4) | `{ repo: string }` | `{ repo: RepoInfo, latest: Release, installed?: InstalledApp }` |
@@ -266,27 +270,52 @@ None in v1 (see Open Questions).
 
 `internal/tui`, one `*tview.Application`, single event-loop goroutine. All GitHub/disk work runs in a
 goroutine and funnels a **small** mutation back via `QueueUpdateDraw`; nothing blocks the event loop.
-Five screens stacked in `Pages`; a persistent status bar shows progress/errors.
+The TUI follows the shared micro-app **product design language** (see `.claude/rules/tui-rules.md`):
+a **sidebar · body · status-bar** skeleton with four navigable sections, set once as the root.
 
-### Screens & navigation
+### Skeleton & navigation
 
 ```
-                 ┌───────────────────────────────────────────────────────────┐
- Tab cycles ───▶ │ 1. Catalog  2. Detail  3. Installed  4. New  5. Config     │
-                 └───────────────────────────────────────────────────────────┘
+┌──────────┬────────────────────────────────────┐
+│ SIDEBAR  │ HEADER (section title)              │
+│ 1 Catalog│────────────────────────────────────│
+│ 2 Install│ BODY (Pages — the active section,   │
+│ 3 New App│   master-detail for list screens)   │
+│ 4 Config │                                     │
+├──────────┴────────────────────────────────────┤
+│ context · x of y    message/spinner    ? help  │
+└────────────────────────────────────────────────┘
 
-[1] Catalog        Table (DisplayName/Repo, Category). `/` search, category filter.
-   │ Enter ───────▶ [2] Detail
-[2] Detail         RepoInfo + releases + latest assets + install state.
-   │                Keys: [i] install, [Esc] back. Ambiguous/no asset match ⇒ asset-pick list.
-[3] Installed      Table (Repo, Version, InstalledAt, last verify state).
-   │                Keys: [u] update, [x] uninstall (Modal confirm), [v] verify.
-[4] New App        Form: choose Template (from manifest), Target dir (InputField).
-   │                [Enter] scaffold ⇒ extract ⇒ app.Suspend → launch `claude /product-idea`
-   │                (or print the command if `claude` is absent).
-[5] Config         Form: Manifest URL + Install dir (InputField), [Save] persists.
-                    Pre-filled from the stored config (defaults on first run).
+[1] Catalog     Master-detail: Table (Name, Repo, Category) left + live Details pane right
+   │            (RepoInfo + latest release/assets + install state). `/` filter, category filter.
+   │            Keys: [i] install (auto-match → verify → download; ambiguous ⇒ asset-pick list),
+   │            [Enter] focuses the detail pane, [r] refresh.
+[2] Installed   Master-detail: Table (Repo, Version, Installed-relative, last verify state) left +
+   │            full record (absolute time, path, verify) right. Keys: [u] update,
+   │            [d] uninstall (Modal confirm, defaults to Cancel), [v] verify, [r] refresh,
+   │            [Space] multi-select (bulk action confirms with a count). `/` filter.
+[3] New App     Form: choose Template (from manifest) + Target dir. [Ctrl-S] scaffold ⇒ extract ⇒
+   │            app.Suspend → launch `claude /product-idea` (or print the command if absent).
+[4] Config      Form: Manifest URL + Install dir, [Ctrl-S] persists; pre-filled from stored config.
 ```
+
+- **Sidebar** is the numbered menu and the app's home (no separate home screen): `1`–`4` jump to a
+  section anywhere outside a text input; `↑/↓`+Enter selects when focused; each entry shows a count
+  and an attention badge (Installed shows `●` on a verify mismatch/missing). `Ctrl-B` toggles it.
+- **Body** is a `Pages` container; switching sections swaps the visible page (never a new `SetRoot`).
+  `Esc` backs out one level (filter → list, detail pane → table); `Tab`/`Shift-Tab` cycle focus
+  regions (sidebar ↔ table ↔ detail/form).
+- **Status bar** (one line, three zones): context (`Catalog · 2 of 12`, `(filtered)` when filtered) ·
+  transient message/spinner and colored result · the few active keys, always ending in `? help`.
+- **States:** every data view shows a centered **Loading…**, **empty** (with an action hint), or
+  **error** (red, with `press r to retry`) message — never a blank screen.
+- **Help:** `?` opens an overlay listing the full keybinding vocabulary; `?`/`Esc` closes it.
+- **Responsive:** target 80×24; below the width threshold the sidebar auto-collapses (still
+  toggleable with `Ctrl-B`); below the hard minimum a centered `Terminal too small — need 80×24`
+  shows until resized.
+- **Persisted UI state:** the last active section and sidebar collapsed/expanded are saved to the
+  `Config` singleton (never with domain data) so the app reopens where it was left; filters and row
+  selection are never persisted.
 
 ### Launch-time PATH check
 On startup the TUI checks whether the configured `InstallDir` is present on the current `$PATH`. If it
@@ -298,17 +327,27 @@ closes it. The profile edit takes effect in future shells; the running process's
 When `InstallDir` is already on `$PATH`, no modal appears.
 
 ### Key interactions
-- **Global:** `Tab`/`Shift-Tab` cycle screens; `q` or `Ctrl-C` quit (always available); status bar
-  reports in-flight network/disk operations and errors.
-- **Catalog:** `/` focuses the search field; selecting a category filters; `Enter` opens Detail.
-- **Detail:** `i` installs (auto-match → verify → download; on ambiguity, a selectable asset list
-  appears); `Esc` returns to Catalog.
-- **Installed:** `u` update, `x` uninstall (confirm via `Modal`), `v` re-verify; results update the row.
-- **New App:** a `Form` (template dropdown + target-dir input); submit scaffolds, then suspends the UI
-  to hand off to `/product-idea`.
-- **Config:** a `Form` (manifest-URL + install-dir inputs) pre-filled from the stored config; `Save`
-  persists and refreshes the catalog.
-- Long operations show a busy indicator in the status bar and never freeze the loop.
+The shared vocabulary (identical across micro-apps; numbers, never F-keys; single letters act in
+lists, `Ctrl`-chords in forms):
+
+- **Global:** `1`–`4` jump to a section; `Ctrl-B` toggle sidebar; `Tab`/`Shift-Tab` cycle focus
+  regions; `?` help overlay; `q` or `Ctrl-C` quit (prompts a confirm when a form is dirty or an
+  operation is in flight); the status bar reports in-flight network/disk operations and errors.
+- **Lists (Catalog, Installed):** `↑↓`/`j k` move; `Enter` opens (focuses the detail pane); `/`
+  focuses an incremental, case-insensitive filter (live; `Esc` clears it and refocuses the table);
+  `r` refresh.
+- **Catalog:** `i` installs the selected app (auto-match → verify → download; on ambiguity a
+  selectable asset list appears). The detail pane updates as the selection moves.
+- **Installed:** `u` update, `d` uninstall (confirm via `Modal` defaulting to Cancel; the wording
+  names the target or the count), `v` re-verify; `Space` toggles a per-row check and `u`/`d`/`v`
+  then apply to all checked rows (single batch confirm) — or to the highlighted row when none are
+  checked. Results update the row and the detail pane.
+- **New App / Config:** a `Form`; `Ctrl-S` saves (scaffold / persist), `Esc` cancels (prompts
+  `Discard changes?` when dirty). Fields validate live: the error shows inline beneath the form in
+  red and a blocked save focuses the first offending field. Config save preserves the TUI view-prefs
+  and refreshes the catalog.
+- Long operations show a busy spinner/message in the status bar and never freeze the loop; results
+  land there as a colored `✓`/`✗`.
 
 ## Acceptance Criteria
 
@@ -317,7 +356,9 @@ When `InstallDir` is already on `$PATH`, no modal appears.
   saved values. The config is editable from both faces — the TUI Config screen and the
   `get_config`/`set_config` MCP tools; `set_config` leaves omitted/empty fields unchanged. Catalog
   actions with an empty `ManifestURL` (if the user clears it) produce a clear "manifest URL not set"
-  error, not a crash.
+  error, not a crash. The TUI view-prefs (`LastSection`, `SidebarCollapsed`) persist via
+  `SaveUIPrefs` and are preserved across a `set_config` / store-settings save (and vice versa); a
+  relaunch reopens on the saved section with the sidebar in its saved state.
 - **UC 2 — Catalog:** With a reachable manifest, all `Apps` entries are returned. With GitHub
   unreachable or a malformed manifest, a clear error is surfaced (no partial/silent success). Nothing
   is written to bbolt.

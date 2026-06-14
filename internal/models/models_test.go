@@ -98,8 +98,10 @@ func TestRoundTrip(t *testing.T) {
 	t.Run("Config", func(t *testing.T) {
 		t.Parallel()
 		roundTrip(t, models.Config{
-			ManifestURL: "https://example.test/catalog.json",
-			InstallDir:  "/home/op/.local/share/microstore/bin",
+			ManifestURL:      "https://example.test/catalog.json",
+			InstallDir:       "/home/op/.local/share/microstore/bin",
+			LastSection:      "installed",
+			SidebarCollapsed: true,
 		})
 	})
 }
@@ -132,6 +134,13 @@ func TestPersistedJSONTags(t *testing.T) {
 			name: "Config",
 			in:   models.Config{ManifestURL: "u", InstallDir: "d"},
 			want: `{"manifest_url":"u","install_dir":"d"}`,
+		},
+		{
+			// View-prefs are additive and omitempty, so old records (without them)
+			// keep decoding; when set, they carry these stable tags.
+			name: "ConfigWithUIPrefs",
+			in:   models.Config{ManifestURL: "u", InstallDir: "d", LastSection: "config", SidebarCollapsed: true},
+			want: `{"manifest_url":"u","install_dir":"d","last_section":"config","sidebar_collapsed":true}`,
 		},
 	}
 	for _, tc := range tests {

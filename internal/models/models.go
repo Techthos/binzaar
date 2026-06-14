@@ -83,7 +83,16 @@ type InstalledApp struct {
 }
 
 // Config is the singleton store configuration persisted under a well-known key.
+//
+// ManifestURL and InstallDir are the store settings, editable from both faces
+// (TUI Config screen and the get_config/set_config MCP tools). LastSection and
+// SidebarCollapsed are lightweight TUI view preferences (which section the app
+// reopens on, and whether the sidebar starts collapsed); they are written only
+// by the TUI, surfaced read-only by get_config, and never touched by set_config.
 type Config struct {
 	ManifestURL string `json:"manifest_url"`
 	InstallDir  string `json:"install_dir"`
+
+	LastSection      string `json:"last_section,omitempty"`
+	SidebarCollapsed bool   `json:"sidebar_collapsed,omitempty"`
 }
