@@ -29,23 +29,42 @@ These rules apply when working in `internal/db` (the storage layer) and `interna
   before the txn closes. Never return or store a raw bbolt slice past `View`/`Update`.
 - Keys are stored in **byte-sorted order**. Exploit this for range/prefix scans; design
   key encodings (e.g. zero-padded numbers, RFC3339 timestamps) so lexical order == logical order.
-- A read-write transaction takes a **process-wide exclusive lock**; only one writer at a time.
-  Many concurrent readers are fine. Don't hold two long-lived handles on the same file from two
-  processes read-write — if you genuinely need multiple writer processes, use the
-  **connection-per-operation strategy** documented at the end of this file instead.
+- The lock is taken at **`Open`, not per transaction**: a read-write open holds a process-wide
+  **exclusive** lock until `Close`; a `ReadOnly` open holds a **shared** lock. A shared lock blocks
+  any exclusive lock — *including one the same process wants on a second handle*. So a persistently
+  held read handle blocks all writers; the only way two processes can both write is for **neither to
+  hold any handle while idle**.
 
-## Opening the database
+## Opening the database — connection-per-operation (this project)
 
-Open once at startup, keep the `*bolt.DB` for the process lifetime, and always set a `Timeout`
-so a stale lock fails fast instead of blocking forever.
+This project lets the TUI and MCP modes run as **concurrent processes** against one file, so it does
+**not** keep a `*bolt.DB` for the process lifetime. Instead the `Store` holds only the **path** and
+opens bbolt **per operation**: a short-lived `ReadOnly` handle for reads, a short-lived read-write
+handle for writes, closed immediately. An idle process holds no lock. See
+`docs/bbolt-concurrent-access-strategy.md` for the full rationale and reference implementation.
+
+- **Bootstrap once.** At startup, open read-write a single time to create the file and run the
+  idempotent migration, then close — `ReadOnly` opens can't create a missing file.
+- **Short `Timeout` + backoff retry.** Use a short per-attempt `Timeout` and retry on
+  `errors.ErrTimeout` (from `go.etcd.io/bbolt/errors`) with backoff up to a small budget, so a brief
+  cross-process collision becomes a sub-second wait rather than a hard failure.
+- **Keep operations short** — the lock is held for the whole `Open`→`Close` span, so no blocking,
+  network, or user I/O inside `view`/`update`; each atomic use-case is a **single** `update` txn.
+- **Change detection:** `Tx.ID()` (exposed as `Store.TxID()`) is bbolt's monotonic committed txid;
+  long-lived readers poll it to detect another process's writes without scanning data.
 
 ```go
-db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 2 * time.Second})
+// Per-operation open with retry (see internal/db/db.go for the full version).
+bdb, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 75 * time.Millisecond, ReadOnly: readOnly})
 if err != nil {
-    return fmt.Errorf("open bbolt at %q: %w", path, err)
+    return fmt.Errorf("open bbolt at %q (readOnly=%v): %w", path, readOnly, err)
 }
-// defer db.Close() at the owning scope
+defer bdb.Close()
 ```
+
+> **When this is the wrong model:** for a single-process app (one surface, no concurrent processes),
+> prefer the standard "open once, hold for the lifetime" approach — it's simpler and faster. The
+> per-operation model is specifically for low-contention multi-process sharing.
 
 - Use `ReadOnly: true` for shared read-only access (no exclusive lock).
 - Tune only when justified: `NoFreelistSync: true` + `FreelistType: bolt.FreelistMapType`
@@ -96,12 +115,63 @@ if err != nil {
 - `Bucket.ForEach(func(k, v []byte) error)` to walk every pair in lexicographical order. **`v == nil` means the entry is a nested bucket, not a value** — check it. Iteration stops on the first non-nil error. Do **not** mutate the bucket during `ForEach`.
 - `tx.ForEach(func(name []byte, b *bolt.Bucket) error)` walks **top-level buckets**; combine with `b.Stats().KeyN` for per-bucket key counts (useful for diagnostics/migrations).
 
+## List queries — pagination, search & ordering
+
+Open-ended list queries that back a `list_*` MCP tool follow one shape, so agents get a flexible,
+bounded surface (search + ordering + pagination) instead of an unbounded dump. `QueryLeads` /
+`LeadQuery` / `LeadPage` in `internal/db/leads.go` is the **reference implementation** — mirror it
+when adding or extending a list query. (A tiny, fixed-size list may stay a plain unpaginated slice;
+the moment a list is searchable, sortable, or can grow past a screenful, it takes this shape.)
+
+The pattern, per entity `X`:
+
+- **Input struct `XQuery`** — zero values mean "no filter"; criteria compose with **AND**:
+  - filter fields (e.g. status/stage); enum filters validated up front (invalid → reject **before**
+    scanning, wrapped over the enum sentinel).
+  - `Search string` — case-insensitive substring; lowercase+trim once, blank means "no search".
+    Match name/email/tags and **resolve linked company names via `companyNames(tx)`** so a record
+    stays findable by its company even though that's now a reference.
+  - `SortBy XSort` (a string enum with a `Valid()` method) — `""` defaults to creation order;
+    invalid → reject. Always tie-break on **ID** so the order is a strict total order.
+  - `Asc bool` — the zero value (`false`) means **descending** (newest/highest first), the natural
+    default; set it to flip to ascending. (Don't use a `Desc` field — then the zero value would be
+    ascending and contradict the default.)
+  - `Page int` (1-based; `< 1` → 1) and `PageSize int` (clamped to `[1, maxPageSize]`; `0` → default).
+- **Result struct `XPage`** — the page slice plus metadata describing the **full filtered set**
+  (not just the page) so the caller can walk the rest: `Page`, `PageSize`, `Total`, `TotalPages`,
+  `HasMore`.
+- **Method `Store.QueryX(XQuery) (XPage, error)`** — validate, normalize page/size/sort, then in one
+  short `View`: full primary-bucket scan → in-memory filter → `sort.SliceStable` → slice out the
+  page. The in-memory scan is acceptable at single-user scale (hundreds–low thousands of rows); **no
+  per-field index in v1** — adding one is a spec change.
+
+```go
+const (
+    maxLeadPageSize     = 50 // hard ceiling — requests above this are clamped, never rejected
+    defaultLeadPageSize = 50
+)
+
+size := q.PageSize
+switch {
+case size < 1:
+    size = defaultLeadPageSize
+case size > maxLeadPageSize:
+    size = maxLeadPageSize // clamp, don't error
+}
+```
+
+The **max page size is 50** across list queries. Over-max requests are **clamped**, not rejected.
+The MCP handler maps args → `XQuery`, then wraps the page as
+`{ <items>: [...], page, page_size, total, total_pages, has_more }` — the one list tool that returns
+more than the bare `{ <items>: [...] }` single-key object (see `mcp-server.md`). Keep the simple
+`Store.ListX(...)` helper too when internal callers (TUI, prompts) want the whole set unpaginated.
+
 ## Errors
 
 - bbolt exposes stable sentinel errors; match with `errors.Is`, never on string text. Common ones:
   - Buckets: `bolt.ErrBucketNotFound`, `bolt.ErrBucketExists`, `bolt.ErrBucketNameRequired`, `bolt.ErrIncompatibleValue`.
   - Keys/values: `bolt.ErrKeyRequired`, `bolt.ErrKeyTooLarge`, `bolt.ErrValueTooLarge`.
-  - Transactions/DB: `bolt.ErrTxClosed`, `bolt.ErrTxNotWritable`, `bolt.ErrDatabaseNotOpen`, `bolt.ErrDatabaseReadOnly`, `bolt.ErrTimeout` (lock-acquire timeout from `Open`).
+  - Transactions/DB: `bolt.ErrTxClosed`, `bolt.ErrTxNotWritable`, `bolt.ErrDatabaseNotOpen`, `bolt.ErrDatabaseReadOnly`. The lock-acquire timeout from `Open` is `errors.ErrTimeout` in the `go.etcd.io/bbolt/errors` subpackage (the top-level `bolt.ErrTimeout` alias is **deprecated** — import the subpackage as `bolterrors` and match `bolterrors.ErrTimeout`).
 - A `nil` from `Get` is **not** an error — it means the key is absent. Handle it explicitly.
 
 ## Durability & performance
@@ -170,139 +240,3 @@ err = db.View(func(tx *bolt.Tx) error {
 - API reference (GoDoc): https://pkg.go.dev/go.etcd.io/bbolt
 - `bbolt` CLI docs: https://github.com/etcd-io/bbolt/blob/main/cmd/bbolt/README.md
 - Releases / changelog: https://github.com/etcd-io/bbolt/releases
-
-## Where the database file lives
-
-Each micro-app keeps its store under its own per-app directory:
-
-```
-~/.local/microapp/<name>/store.db
-```
-
-`<name>` is the micro-app's name. Create the directory (`0700`) before opening the file, and let
-`--db <path>` (or the equivalent flag/env) override the location. Keeping one DB per app under its
-own directory is what makes the connection-per-operation strategy below safe across an app's own
-processes (e.g. its TUI and MCP server) without colliding with other apps' files.
-
-# bbolt concurrent-access strategy: connection-per-operation
-
-A portable strategy for letting **two or more independent processes** read and write the same
-[bbolt](https://github.com/etcd-io/bbolt) file, without the "open at startup, hold the handle for
-the process lifetime" model that makes bbolt single-process. Application-agnostic; copy it anywhere.
-
-> **TL;DR** — bbolt's file lock is taken at `Open`, not per-transaction, and a held *read* lock
-> blocks *all* writers. The only way two processes can both write is for **neither to hold any handle
-> while idle**: open for one operation, then close. Wrap the open in a timeout + backoff retry so a
-> collision becomes a sub-second wait. Detect external writes by polling bbolt's monotonic txid.
-
-## 1. Why the default model is single-process
-
-bbolt's lock is an OS file lock (`flock` on Unix, `LockFileEx` on Windows). Two facts decide
-everything:
-
-1. **The lock is acquired at `Open`, not per transaction.** There is no "lock only while writing";
-   opening read-write locks the file until `Close`. The usual `bolt.Open(...); defer db.Close()`
-   therefore holds a process-wide lock for the whole process lifetime. A second process that opens
-   read-write blocks until its `Timeout`, then fails with `ErrTimeout`.
-2. **Two lock modes conflict in the direction that bites:** read-write takes `LOCK_EX` (exclusive);
-   `ReadOnly: true` takes `LOCK_SH` (shared). `LOCK_EX` cannot be granted while **any** `LOCK_SH` is
-   held — even one held by the same process on a different descriptor.
-
-So the tempting design — keep a read-only handle open for fast reads, open a second RW handle only
-to write — **deadlocks**: the persistent `LOCK_SH` blocks the writer's `LOCK_EX`, including its own.
-Two long-lived processes each holding an idle read handle means *no write ever succeeds*.
-
-**Consequence:** to let two processes both write, *no process may hold any handle while idle.*
-
-## 2. The algorithm: connection-per-operation
-
-Open the database for the duration of **one operation** and close it immediately. Idle processes
-hold no lock, so any process is free to grab the (exclusive, brief) write lock when it needs it.
-Reads and writes stay serialized at the file level, but each lock lasts milliseconds — for
-low-contention workloads it behaves as if parallel.
-
-```
-idle      → no handle, no lock            (any process may write)
-read op   → Open(ReadOnly) → View   → Close   (LOCK_SH, milliseconds)
-write op  → Open(RW)       → Update → Close   (LOCK_EX, milliseconds)
-```
-
-Three rules make it correct and robust:
-
-- **Per-open `Timeout` + backoff retry.** Keep the per-attempt timeout short (~75ms) and retry with
-  growing backoff up to a total budget (~3s). On collision the loser waits, not fails. Retry **only**
-  on `bolt.ErrTimeout`; any other error is fatal. Because retry uses `time.Sleep` (blocking), never
-  call an operation on a UI/event-loop goroutine — run it on a worker and hand the result back.
-- **One-time bootstrap.** `ReadOnly` opens require the file and buckets to already exist (bbolt
-  can't create a file read-only). At startup, open read-write **once**, run an idempotent migration
-  (`CreateBucketIfNotExists` for every bucket), and close. Every later operation assumes the schema.
-- **Each operation is its own transaction.** Keep every cross-entity, must-be-atomic use-case inside
-  a **single** `update(func(tx){...})` so it commits or rolls back as a unit — you can no longer span
-  multiple `view`/`update` calls in one transaction.
-
-The `Store` holds only the **path**, never a live `*bolt.DB`. An `open(readOnly bool)` helper runs
-the timeout/retry loop; thin `view`/`update` wrappers call `open`, run the `bolt.Tx` function, and
-`defer db.Close()`. (Reference Go implementation: see the bbolt GoDoc for `Options.Timeout`,
-`Options.ReadOnly`; the wrapper is ~40 lines.)
-
-## 3. Cross-process freshness: detecting "someone else wrote"
-
-The data layer is never stale — every read opens fresh and sees the latest committed state. But a
-**long-lived UI** caches a *rendered snapshot* in its widgets that must refresh when another process
-writes.
-
-bbolt stamps a **monotonically increasing transaction ID** in its meta page on every committed
-write; a read transaction's `tx.ID()` returns the latest committed ID. Comparing it across reads is
-a near-free "did anything change?" probe (one `Open` + empty `View`, no data scan). Wire it into a
-long-lived reader as a background poll:
-
-```
-every 1–2s on a worker goroutine:
-    now := store.txid()            // one Open + empty View
-    if now != lastSeen:
-        data := store.fetchAll()             // re-query off the UI thread
-        queueUIUpdate(func(){ render(data) }) // tiny mutation on the UI thread
-        lastSeen = now
-```
-
-Pair it with a **manual refresh key**. Notes: a no-op write still bumps the txid (occasional
-identical re-render — harmless); `tx.ID()` is authoritative while file `mtime`/size are not (bbolt
-writes via `mmap` + `fsync`); `fsnotify` works too but emits several events per commit and still
-needs a txid confirm, so the poll is simpler.
-
-## 4. Trade-offs & decision guide
-
-Connection-per-operation costs a per-op `Open` (mmap + meta read, a few ms), a cold page cache each
-op, and lower write throughput (one fsync + open per op) — in exchange for multiple writer processes
-and always-fresh cross-process reads. **Read-your-own-writes across processes is eventual**: between
-two operations another process may have written (identical to alt-tabbing between two windows).
-
-```
-Do multiple OS processes need to write the same bbolt file?
-├─ No → use the standard single-handle model. This doc doesn't apply.
-└─ Yes
-   ├─ Can you instead run ONE process hosting all surfaces?
-   │     → Prefer that. One handle, no lock dance, full cache & throughput.
-   ├─ Low-contention & low-throughput (desktop tool, single user, UI + helper)?
-   │     → Use connection-per-operation (this doc).
-   └─ Write-heavy or genuinely concurrent (many writers, high TPS)?
-         → Wrong tool. Use a client/server DB (SQLite+WAL; Postgres for true concurrency).
-```
-
-## 5. Correctness checklist
-
-- [ ] `Store` holds the **path**, never a live `*bolt.DB`; no handle/`*bolt.Tx`/tx-scoped slice
-      retained past its helper (copy or unmarshal before returning — the handle closes right after).
-- [ ] One-time **bootstrap** opens RW, runs the idempotent migration, closes.
-- [ ] `open(readOnly)` retries **only** on `bolt.ErrTimeout`, with short per-attempt `Timeout` +
-      backoff up to a budget matched to your contention (documented if non-default).
-- [ ] All reads via `view` (ReadOnly), all writes via `update` (RW); each atomic use-case is a
-      **single** `update` transaction; operations are short (no network/blocking/user I/O inside).
-- [ ] `view`/`update` are **never** called on a UI/event-loop goroutine.
-- [ ] Long-lived readers refresh via a **txid poll** (`tx.ID()`) plus a **manual refresh** key.
-
-## References
-
-- bbolt README — https://github.com/etcd-io/bbolt/blob/main/README.md
-- `Options.Timeout`, `Options.ReadOnly`, `Tx.ID()` — https://pkg.go.dev/go.etcd.io/bbolt#Options
-- `flock(2)` lock semantics — https://man7.org/linux/man-pages/man2/flock.2.html
