@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"techthos.net/microstore/templates"
+	"techthos.net/binzaar/templates"
 )
 
 // runInit places the embedded Claude Code bootstrap kit (the .claude
@@ -25,7 +25,7 @@ func runInit(dir string, out io.Writer) error {
 	}
 	updating := err == nil
 	if updating && !existing.IsDir() {
-		return fmt.Errorf("%s exists but is not a directory — move it aside and rerun \"microstore init\"", filepath.Join(dir, ".claude"))
+		return fmt.Errorf("%s exists but is not a directory — move it aside and rerun \"binzaar init\"", filepath.Join(dir, ".claude"))
 	}
 
 	files, err := copyKit(dir, kit)
@@ -59,7 +59,7 @@ Open this directory with Claude Code and start with /product-idea.
 // overwriting any existing kit file (refreshing it to the embedded version).
 // Files present on disk that the kit does not ship are left in place. It
 // returns the number of files written. Files are written 0644 so a later
-// "microstore init" can refresh them again.
+// "binzaar init" can refresh them again.
 func copyKit(dir string, kit fs.FS) (int, error) {
 	files := 0
 	err := fs.WalkDir(kit, ".", func(path string, d fs.DirEntry, err error) error {

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"techthos.net/microstore/internal/db"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/db"
+	"techthos.net/binzaar/internal/models"
 )
 
 func sampleApp(repo string) models.InstalledApp {
@@ -53,7 +53,7 @@ func TestInstallGetNotFound(t *testing.T) {
 func TestInstallSaveThenGet(t *testing.T) {
 	t.Parallel()
 	repo := newStore(t).Installs()
-	want := sampleApp("techthos/microstore")
+	want := sampleApp("techthos/binzaar")
 	if err := repo.Save(want); err != nil {
 		t.Fatalf("Save(): %v", err)
 	}
@@ -67,10 +67,10 @@ func TestInstallSaveThenGet(t *testing.T) {
 func TestInstallSaveOverwrites(t *testing.T) {
 	t.Parallel()
 	repo := newStore(t).Installs()
-	if err := repo.Save(sampleApp("techthos/microstore")); err != nil {
+	if err := repo.Save(sampleApp("techthos/binzaar")); err != nil {
 		t.Fatalf("first Save(): %v", err)
 	}
-	want := sampleApp("techthos/microstore")
+	want := sampleApp("techthos/binzaar")
 	want.Version = "v2.0.0"
 	if err := repo.Save(want); err != nil {
 		t.Fatalf("second Save(): %v", err)
@@ -121,7 +121,7 @@ func TestInstallListEmpty(t *testing.T) {
 func TestInstallDelete(t *testing.T) {
 	t.Parallel()
 	repo := newStore(t).Installs()
-	app := sampleApp("techthos/microstore")
+	app := sampleApp("techthos/binzaar")
 	if err := repo.Save(app); err != nil {
 		t.Fatalf("Save(): %v", err)
 	}

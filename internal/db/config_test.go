@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"techthos.net/microstore/internal/db"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/db"
+	"techthos.net/binzaar/internal/models"
 )
 
 func newStore(t *testing.T) *db.Store {
@@ -40,7 +40,7 @@ func TestConfigSaveThenLoad(t *testing.T) {
 	repo := newStore(t).Config()
 	want := models.Config{
 		ManifestURL: "https://example.test/catalog.json",
-		InstallDir:  "/opt/microstore/bin",
+		InstallDir:  "/opt/binzaar/bin",
 	}
 	if err := repo.Save(want); err != nil {
 		t.Fatalf("Save(): %v", err)

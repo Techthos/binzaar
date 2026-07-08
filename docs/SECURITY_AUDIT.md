@@ -1,4 +1,4 @@
-# Security Audit: microstore
+# Security Audit: binzaar
 
 _Date: 2026-05-28_
 

@@ -1,6 +1,6 @@
-# microstore — Specification
+# binzaar — Specification
 
-> This document is the **implementation contract** for microstore. Code follows this spec; any change
+> This document is the **implementation contract** for binzaar. Code follows this spec; any change
 > to observable product behavior updates this file in the **same commit** (see
 > `.claude/rules/specification-rules.md`). When code and spec disagree, one of them is a bug.
 
@@ -13,7 +13,7 @@ shape.
 
 **Target user.** A developer/operator who uses or builds these micro-apps and works from a terminal.
 
-**Summary.** microstore is itself one of these micro-apps. It has two faces over GitHub:
+**Summary.** binzaar is itself one of these micro-apps. It has two faces over GitHub:
 
 - **Consume** — fetch a curated catalog (`catalog.json`) from GitHub live, browse/search it, view an
   app's releases and assets, detect the host `GOOS/GOARCH`, download the matching release asset,
@@ -21,7 +21,7 @@ shape.
   directory, and track it. Update / uninstall / re-verify tracked installs.
 - **Create** — pick a starting template (also listed in the catalog), download its tarball from
   GitHub, extract the bare scaffolding into a target directory, and hand off to the existing
-  spec-driven workflow by initiating `/product-idea`. Independently of the catalog, `microstore init`
+  spec-driven workflow by initiating `/product-idea`. Independently of the catalog, `binzaar init`
   places the **embedded Claude Code bootstrap kit** (the `.claude/` directory: the `/product-idea`,
   `/app-init`, and `/app-spec-sync` commands, the layer rules, and the `build-and-release` skill)
   into the current directory and prints how the phases are used — it needs no network and opens no
@@ -40,20 +40,20 @@ you've installed and the app's own configuration.
   managed directory; record the install.
 - Manage tracked installs: **update** to a newer release, **uninstall**, and **re-verify** integrity.
 - Scaffold a new micro-app from a catalog-listed template and **initiate `/product-idea`**.
-- Bootstrap the spec-first Claude Code setup anywhere via **`microstore init`**: place the embedded
+- Bootstrap the spec-first Claude Code setup anywhere via **`binzaar init`**: place the embedded
   `.claude` kit into the current directory (or update an existing one in place) and print the phase
   guide (`/product-idea` → `/app-init` → `/app-spec-sync`).
 - Expose all of the above through both a **tview TUI** and an **MCP stdio server** (full read+mutate).
-- Use anonymous GitHub access by default; use a token from `MICROSTORE_GITHUB_TOKEN` when present.
+- Use anonymous GitHub access by default; use a token from `BINZAAR_GITHUB_TOKEN` when present.
 
 ### Non-Goals (and the local-only envelope)
-- **microstore runs no service of its own.** It is a single binary with no daemon, no embedded web
+- **binzaar runs no service of its own.** It is a single binary with no daemon, no embedded web
   server, no broker, and no second binary required to function. Its GitHub access is **outbound HTTPS
   client I/O** (like `git` or `go install`), not a hosted service. This is the explicit reconciliation
   of the template envelope: *acting as an HTTP client is allowed; running a service is not.*
 - **No offline catalog cache.** Online-only: if GitHub is unreachable, browse/search/install/scaffold
   fail with a clear error. bbolt is **not** a catalog mirror.
-- **No package-manager PATH management.** Installs go to a managed directory; microstore does not
+- **No package-manager PATH management.** Installs go to a managed directory; binzaar does not
   symlink onto `PATH` or manage system-wide installation, and it never rewrites `PATH` silently. It
   *does* check on TUI launch whether `InstallDir` is on the current `$PATH` and, when it is not, warn
   the user and — only on explicit confirmation — append a single `export PATH="$PATH:<InstallDir>"`
@@ -61,7 +61,7 @@ you've installed and the app's own configuration.
   involvement; there is no symlinking, no system-wide install, and no change to the running process's
   `PATH`.
 - **Scaffolding does not configure the project.** It does not set the Go module path, run `git init`,
-  or rename anything — that is the job of the downstream `/app-init` step. microstore lays down the
+  or rename anything — that is the job of the downstream `/app-init` step. binzaar lays down the
   bare template and initiates `/product-idea`.
 - **No private-registry / non-GitHub sources** in v1. The catalog and all binaries/tarballs come from
   GitHub.
@@ -69,7 +69,7 @@ you've installed and the app's own configuration.
 
 ## Domain Model
 
-microstore distinguishes **live** entities (fetched from GitHub every time, never stored) from
+binzaar distinguishes **live** entities (fetched from GitHub every time, never stored) from
 **persisted** entities (kept in bbolt). All structs live in `internal/models` and are
 storage-agnostic (no bbolt imports). Serialization is **JSON** throughout.
 
@@ -78,7 +78,7 @@ storage-agnostic (no bbolt imports). Serialization is **JSON** throughout.
 | Entity | Source | Key attributes |
 |---|---|---|
 | `Catalog` | manifest (`catalog.json`) | `Apps []ManifestEntry`, `Templates []Template` |
-| `ManifestEntry` | manifest | `Repo` (`owner/name`), `Category`, `DisplayName` (optional), `Description` (optional — short manifest-authored summary), `Bin` (optional — overrides the repo's bare name in the placed `microapp-<name>` filename), `MCP` (optional `MCPLaunch` — how to launch the app's MCP server over stdio) |
+| `ManifestEntry` | manifest | `Repo` (`owner/name`), `Category`, `DisplayName` (optional), `Description` (optional — short manifest-authored summary), `Bin` (optional — overrides the repo's bare name as the placed executable filename), `MCP` (optional `MCPLaunch` — how to launch the app's MCP server over stdio) |
 | `MCPLaunch` | manifest | `Command` (executable), `Args` (optional arguments) — mirrors an `.mcp.json` stdio server entry |
 | `Template` | manifest | `Repo` (`owner/name`), `Ref` (branch/tag), `Name`, `Description` |
 | `RepoInfo` | GitHub repo API | `FullName`, `Description`, `Homepage`, `Stars` |
@@ -103,7 +103,7 @@ Config             ──singleton──>   owns ManifestURL + InstallDir + TUI 
 ```
 
 - An installed app corresponds to exactly one catalog repo (by slug) and exactly one downloaded
-  asset of one release. The reference is by slug string; microstore does not enforce that the slug
+  asset of one release. The reference is by slug string; binzaar does not enforce that the slug
   still exists in the catalog (an installed app may have been removed from the manifest).
 
 ### Identity / key strategy
@@ -154,8 +154,8 @@ bbolt byte slice past its transaction.
 Each use-case names the entities, the surface(s), and the repository/service operations involved.
 
 1. **Configure store (first-run + edit).** *Entities:* `Config`. *Surfaces:* TUI, MCP. On first run,
-   apply defaults: `InstallDir = ~/.local/share/microstore/bin`, `ManifestURL` = the curated catalog
-   published from this repo (`https://raw.githubusercontent.com/Techthos/microstore/main/catalog.json`).
+   apply defaults: `InstallDir = ~/.local/share/binzaar/bin`, `ManifestURL` = the curated catalog
+   published from this repo (`https://raw.githubusercontent.com/Techthos/binzaar/main/catalog.json`).
    The user may change either from the Config screen / `set_config`. The same singleton also holds
    two lightweight TUI **view preferences** — `LastSection` (the section the app reopens on) and
    `SidebarCollapsed` — written only by the TUI (so the app reopens where it was left); `get_config`
@@ -173,10 +173,9 @@ Each use-case names the entities, the surface(s), and the repository/service ope
 6. **Install app.** *Entities:* `Release`, `Asset`, `InstalledApp`. *Surfaces:* TUI, MCP. Resolve the
    target release (default: latest non-prerelease, or a specified tag), detect host `GOOS/GOARCH`,
    match an asset by naming convention, fetch the release's `checksums.txt`, download the asset,
-   **verify SHA-256**, write it to `InstallDir` as `microapp-<name>` (the entry's `bin` override when
-   set, else the repo's bare name, prefixed — the `microapp-` prefix is added only when absent, so a
-   name that already begins with `microapp-` is left as-is rather than doubled to `microapp-microapp-…`;
-   any `.exe` suffix preserved on Windows) with `0755`, and record an `InstalledApp`. On zero or
+   **verify SHA-256**, write it to `InstallDir` under its original name (the entry's `bin` override
+   when set, else the repo's bare name, placed as-is with no prefix; any `.exe` suffix preserved on
+   Windows) with `0755`, and record an `InstalledApp`. On zero or
    ambiguous asset matches, fall back to manual asset selection. If no checksums file is found,
    installation is **refused** unless an explicit "allow unverified" override is given. *Ops:* GitHub
    fetch + installer + `InstallRepo.Save`.
@@ -230,7 +229,7 @@ Each use-case names the entities, the surface(s), and the repository/service ope
 - As an operator, I want to install an app with one keystroke and have the correct binary for my
   machine fetched and integrity-checked so I don't pick the wrong asset or a corrupted file. *(UC 6)*
 - As an operator, I want to see what I've installed, update it, uninstall it, or re-verify it. *(UC 7–10)*
-- As an operator, I want to launch an installed micro-app from inside microstore so I can run it
+- As an operator, I want to launch an installed micro-app from inside binzaar so I can run it
   without leaving the store and find it again when it exits. *(UC 13)*
 - As an operator, I want to add an installed micro-app's MCP server to the `.mcp.json` of the folder
   I'm working in so an LLM client picks it up, without hand-editing the file. *(UC 14)*
@@ -394,7 +393,7 @@ lists, `Ctrl`-chords in forms):
 
 ## Acceptance Criteria
 
-- **UC 1 — Config:** Fresh DB yields defaults (`InstallDir = ~/.local/share/microstore/bin`,
+- **UC 1 — Config:** Fresh DB yields defaults (`InstallDir = ~/.local/share/binzaar/bin`,
   `ManifestURL` = the curated catalog published from this repo). Setting and reloading returns the
   saved values. The config is editable from both faces — the TUI Config screen and the
   `get_config`/`set_config` MCP tools; `set_config` leaves omitted/empty fields unchanged. Catalog
@@ -411,10 +410,10 @@ lists, `Ctrl`-chords in forms):
   if a matching `InstalledApp` exists, the response includes the installed version.
 - **UC 5 — Releases:** Returns releases newest-first; prereleases are flagged and excluded from
   "latest" resolution.
-- **UC 6 — Install:** On a host where exactly one asset matches `GOOS/GOARCH`, microstore downloads it,
-  the computed SHA-256 equals the `checksums.txt` entry, the file lands in `InstallDir` named
-  `microapp-<name>` (the entry's `bin` override when set, else the repo's bare name, prefixed only
-  when the name does not already start with `microapp-`) mode
+- **UC 6 — Install:** On a host where exactly one asset matches `GOOS/GOARCH`, binzaar downloads it,
+  the computed SHA-256 equals the `checksums.txt` entry, the file lands in `InstallDir` under its
+  original name (the entry's `bin` override when set, else the repo's bare name, placed as-is with no
+  prefix) mode
   `0755`, and an `InstalledApp` record exists
   keyed by slug with its `Path` pointing at that file. A checksum mismatch aborts the install, writes no
   record, and leaves no partial binary. Zero/ambiguous matches trigger manual selection (TUI) or an
@@ -452,7 +451,7 @@ lists, `Ctrl`-chords in forms):
   (surfaced as a `[yellow]` no-op in the TUI and an error result via MCP), and an unknown slug yields
   a clear "not installed" error. `dir` defaults to the current working directory. No bbolt write
   occurs.
-- **`init` mode:** In a directory with no `.claude` entry, `microstore init` places the embedded
+- **`init` mode:** In a directory with no `.claude` entry, `binzaar init` places the embedded
   bootstrap kit byte-for-byte (`.claude/commands`, `.claude/rules`, `.claude/skills`) and prints the
   phase guide naming `/product-idea`, `/app-init`, and `/app-spec-sync` in that order plus the
   `build-and-release` skill, reporting `Initialized`. When a `.claude` **directory** already exists,
@@ -465,7 +464,7 @@ lists, `Ctrl`-chords in forms):
   modal showing the exact `export PATH="$PATH:<InstallDir>"` line and the target shell profile
   (`~/.zshrc` for zsh, else `~/.bashrc`). Confirming appends that line to the profile (idempotently;
   the file is created if missing) and leaves the running process's `PATH` unchanged; dismissing makes
-  no change. When `InstallDir` is already on `$PATH`, no modal appears. microstore never modifies the
+  no change. When `InstallDir` is already on `$PATH`, no modal appears. binzaar never modifies the
   profile without confirmation and never alters `PATH` by any other means.
 - **Cross-cutting:** In `serve`/`mcp` mode no logs are written to stdout. bbolt is opened with a
   `Timeout`; a second writer process fails fast rather than hanging. The TUI never blocks its event
@@ -475,10 +474,10 @@ lists, `Ctrl`-chords in forms):
 
 - **Modes & lock.** Default invocation → TUI; `serve`/`mcp` → MCP stdio server; `init` → place the
   embedded Claude Code bootstrap kit into the current directory (or update it in place) and exit (no DB, no network);
-  `--db <path>` overrides the DB location (default `~/.local/share/microstore/microstore.db`).
+  `--db <path>` overrides the DB location (default `~/.local/share/binzaar/binzaar.db`).
   Because bbolt takes a process-wide write lock, the TUI and the MCP server are **alternative
   modes**, not concurrent against one file. *Assumption accepted.*
-- **GitHub auth.** Anonymous by default (60 req/hr). If `MICROSTORE_GITHUB_TOKEN` is set, requests use
+- **GitHub auth.** Anonymous by default (60 req/hr). If `BINZAAR_GITHUB_TOKEN` is set, requests use
   it (`Authorization: Bearer …`, 5000 req/hr, private repos). On HTTP 403 rate-limit, the error
   surfaces the limit/reset. *Assumption accepted.*
 - **Manifest schema.** `catalog.json` is `{ "apps": ManifestEntry[], "templates": Template[] }`, fetched
@@ -486,11 +485,11 @@ lists, `Ctrl`-chords in forms):
   `display_name`, optional `description`, optional `bin`, optional `mcp` — an `{ command, args }`
   launch object for the app's MCP server); richer metadata is read live from GitHub. *Assumption —
   finalize the exact field names with the first published manifest.*
-- **Self-hosting.** The curated catalog lists microstore itself (`Techthos/microstore`, `bin: "store"`),
-  so the store installs and updates itself as `microapp-store` alongside the apps it manages. The
-  `scripts/install.sh` bootstrap places that same file (`microapp-store` in the default `InstallDir`,
-  `~/.local/share/microstore/bin`), so a later `install`/`update` of `Techthos/microstore` from within
-  microstore overwrites it in place.
+- **Self-hosting.** The curated catalog lists binzaar itself (`Techthos/binzaar`, `bin: "store"`),
+  so the store installs and updates itself as `store` alongside the apps it manages. The
+  `scripts/install.sh` bootstrap places that same file (`store` in the default `InstallDir`,
+  `~/.local/share/binzaar/bin`), so a later `install`/`update` of `Techthos/binzaar` from within
+  binzaar overwrites it in place.
 - **Asset naming convention.** An asset matches when its lower-cased name contains an OS token and an
   arch token for the host runtime, with aliases: `amd64`↔`x86_64`/`x64`, `arm64`↔`aarch64`,
   `386`↔`i386`/`x86`, `darwin`↔`macos`/`osx`, `windows`↔`win` (`.exe`). This matches the template's
@@ -502,7 +501,7 @@ lists, `Ctrl`-chords in forms):
   sidecar falls back to its sole line if the recorded inner name differs. Sidecar files are excluded
   from host asset matching so they are never mistaken for an installable binary. No checksum source
   for the chosen asset ⇒ install refused unless explicitly allowed (`allow_unverified`).
-- **`/product-idea` hand-off depends on the `claude` CLI** being on `PATH`; microstore's core never
+- **`/product-idea` hand-off depends on the `claude` CLI** being on `PATH`; binzaar's core never
   requires it — when absent it prints the exact command to run. *Assumption accepted.*
 - **Prompts.** None in v1; a "suggest an app for a task" MCP prompt is a candidate for later.
 - **No cross-arch override** in v1 (host arch only + manual asset pick). A `--os/--arch` override is a

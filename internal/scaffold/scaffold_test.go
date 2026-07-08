@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"techthos.net/microstore/internal/scaffold"
+	"techthos.net/binzaar/internal/scaffold"
 )
 
 type tarEntry struct {

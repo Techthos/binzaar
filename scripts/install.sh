@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 #
-# microstore installer.
+# binzaar installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Techthos/microstore/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Techthos/binzaar/main/scripts/install.sh | bash
 #
 # Detects the host OS/arch, resolves the latest GitHub release (or a pinned
 # version), downloads the matching binary, verifies its SHA-256 against the
-# release's `.sha256` sidecar, and installs it as `microapp-store` into
-# microstore's managed install directory — alongside the micro-apps it installs
+# release's `.sha256` sidecar, and installs it as `store` into
+# binzaar's managed install directory — alongside the micro-apps it installs
 # — so the store can later update itself from its own catalog
-# (`microstore install Techthos/microstore` overwrites this same file).
+# (`binzaar install Techthos/binzaar` overwrites this same file).
 #
 # Environment overrides:
-#   MICROSTORE_VERSION       release tag to install (default: latest, e.g. v0.2.0)
-#   MICROSTORE_INSTALL_DIR   target directory     (default: ~/.local/share/microstore/bin)
-#   MICROSTORE_REPO          owner/name           (default: Techthos/microstore)
-#   MICROSTORE_GITHUB_TOKEN  token for private repos / higher API rate limits
+#   BINZAAR_VERSION       release tag to install (default: latest, e.g. v0.2.0)
+#   BINZAAR_INSTALL_DIR   target directory     (default: ~/.local/share/binzaar/bin)
+#   BINZAAR_REPO          owner/name           (default: Techthos/binzaar)
+#   BINZAAR_GITHUB_TOKEN  token for private repos / higher API rate limits
 #                            (GITHUB_TOKEN is also honored)
 #
 set -euo pipefail
 
-REPO="${MICROSTORE_REPO:-Techthos/microstore}"
-BIN="microstore"            # release asset base name
-PLACED="microapp-store"     # installed filename (matches the catalog's "bin": "store")
-VERSION="${MICROSTORE_VERSION:-latest}"
-INSTALL_DIR="${MICROSTORE_INSTALL_DIR:-${HOME}/.local/share/microstore/bin}"
-TOKEN="${MICROSTORE_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
+REPO="${BINZAAR_REPO:-Techthos/binzaar}"
+BIN="binzaar"            # release asset base name
+PLACED="store"          # installed filename (matches the catalog's "bin": "store")
+VERSION="${BINZAAR_VERSION:-latest}"
+INSTALL_DIR="${BINZAAR_INSTALL_DIR:-${HOME}/.local/share/binzaar/bin}"
+TOKEN="${BINZAAR_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}"
 
 # ---- output helpers (everything diagnostic goes to stderr) -------------------
 if [ -t 2 ]; then
@@ -110,7 +110,7 @@ esac
 if [ "$VERSION" = "latest" ]; then
   info "Resolving latest release of ${REPO}…"
   api_json="$(fetch "https://api.github.com/repos/${REPO}/releases/latest")" \
-    || die "could not query the GitHub API for ${REPO} (is the repo private? set MICROSTORE_GITHUB_TOKEN)"
+    || die "could not query the GitHub API for ${REPO} (is the repo private? set BINZAAR_GITHUB_TOKEN)"
   # Split on commas so each JSON field is isolated on its own line; this keeps
   # the extraction correct for both pretty-printed and minified API responses.
   TAG="$(printf '%s' "$api_json" \
@@ -128,7 +128,7 @@ BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 info "Installing ${BIN} ${TAG} (${GOOS}/${GOARCH}) as ${PLACED}"
 
 # ---- download + verify in a self-cleaning temp dir --------------------------
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/microstore-install.XXXXXX")"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/binzaar-install.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
 info "Downloading ${ASSET}…"

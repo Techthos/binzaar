@@ -16,10 +16,10 @@ import (
 	"strings"
 	"testing"
 
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/db"
-	"techthos.net/microstore/internal/install"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/db"
+	"techthos.net/binzaar/internal/install"
+	"techthos.net/binzaar/internal/models"
 )
 
 type fakeGH struct {
@@ -307,25 +307,25 @@ func TestInstallAndList(t *testing.T) {
 }
 
 // TestInstallAndUpdateBinOverride pins the self-hosting contract: a catalog
-// entry with a "bin" override (microstore lists itself as bin "store") installs
-// as microapp-<bin>, and an update re-places the binary at that same filename
-// even though the entry is reconstructed from the persisted record.
+// entry with a "bin" override (binzaar lists itself as bin "store") installs
+// as <bin>, and an update re-places the binary at that same filename even though
+// the entry is reconstructed from the persisted record.
 func TestInstallAndUpdateBinOverride(t *testing.T) {
 	t.Parallel()
 	relV1, blobs := verifiedRelease("v1.0.0", []byte("v1"))
 	gh := &fakeGH{
-		catalog:  models.Catalog{Apps: []models.ManifestEntry{{Repo: "Techthos/microstore", Category: "tools", DisplayName: "microstore", Bin: "store"}}},
+		catalog:  models.Catalog{Apps: []models.ManifestEntry{{Repo: "Techthos/binzaar", Category: "tools", DisplayName: "binzaar", Bin: "store"}}},
 		releases: []models.Release{relV1},
 		blobs:    blobs,
 	}
 	svc, dir := configured(t, gh)
 	ctx := context.Background()
 
-	rec, err := svc.Install(ctx, "Techthos/microstore", "", "", false)
+	rec, err := svc.Install(ctx, "Techthos/binzaar", "", "", false)
 	if err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	wantPath := filepath.Join(dir, "microapp-store")
+	wantPath := filepath.Join(dir, "store")
 	if rec.Path != wantPath || rec.Bin != "store" {
 		t.Errorf("record = Path %q Bin %q, want Path %q Bin \"store\"", rec.Path, rec.Bin, wantPath)
 	}
@@ -335,7 +335,7 @@ func TestInstallAndUpdateBinOverride(t *testing.T) {
 	for k, v := range blobsV2 {
 		gh.blobs[k] = v
 	}
-	res, err := svc.Update(ctx, "Techthos/microstore")
+	res, err := svc.Update(ctx, "Techthos/binzaar")
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}

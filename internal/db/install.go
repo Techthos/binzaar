@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	bolt "go.etcd.io/bbolt"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/models"
 )
 
 // ErrNotFound is returned by repository lookups/deletes when no record exists

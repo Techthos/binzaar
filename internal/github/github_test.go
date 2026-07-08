@@ -10,31 +10,31 @@ import (
 	"testing"
 	"time"
 
-	"techthos.net/microstore/internal/github"
+	"techthos.net/binzaar/internal/github"
 )
 
 const (
-	repoJSON = `{"full_name":"techthos/microstore","description":"a local store","homepage":"https://example.test","stargazers_count":7}`
+	repoJSON = `{"full_name":"techthos/binzaar","description":"a local store","homepage":"https://example.test","stargazers_count":7}`
 
 	releasesJSON = `[
 	 {"tag_name":"v2.0.0-rc1","name":"rc","body":"pre","published_at":"2026-05-10T00:00:00Z","prerelease":true,"assets":[]},
 	 {"tag_name":"v1.2.0","name":"stable","body":"notes","published_at":"2026-05-01T00:00:00Z","prerelease":false,
-	  "assets":[{"name":"microstore_linux_amd64","browser_download_url":"https://example.test/dl/bin","size":1234,"content_type":"application/octet-stream"}]}
+	  "assets":[{"name":"binzaar_linux_amd64","browser_download_url":"https://example.test/dl/bin","size":1234,"content_type":"application/octet-stream"}]}
 	]`
 
-	catalogJSON = `{"apps":[{"repo":"techthos/microstore","category":"tools","display_name":"microstore"}],
+	catalogJSON = `{"apps":[{"repo":"techthos/binzaar","category":"tools","display_name":"binzaar"}],
 	                "templates":[{"repo":"techthos/template","ref":"main","name":"base","description":"bare"}]}`
 )
 
 // newClient wires a github.Client to a test server handling the GitHub API
-// shapes microstore uses.
+// shapes binzaar uses.
 func newClient(t *testing.T, opts ...github.Option) (*github.Client, *httptest.Server) {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/techthos/microstore", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/repos/techthos/binzaar", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, repoJSON)
 	})
-	mux.HandleFunc("/repos/techthos/microstore/releases", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/repos/techthos/binzaar/releases", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, releasesJSON)
 	})
 	mux.HandleFunc("/repos/techthos/template/tarball/main", func(w http.ResponseWriter, _ *http.Request) {
@@ -63,7 +63,7 @@ func TestFetchCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchCatalog: %v", err)
 	}
-	if len(cat.Apps) != 1 || cat.Apps[0].Repo != "techthos/microstore" || cat.Apps[0].DisplayName != "microstore" {
+	if len(cat.Apps) != 1 || cat.Apps[0].Repo != "techthos/binzaar" || cat.Apps[0].DisplayName != "binzaar" {
 		t.Errorf("apps = %+v", cat.Apps)
 	}
 	if len(cat.Templates) != 1 || cat.Templates[0].Ref != "main" {
@@ -83,11 +83,11 @@ func TestFetchCatalogEmptyURL(t *testing.T) {
 func TestRepoInfo(t *testing.T) {
 	t.Parallel()
 	c, _ := newClient(t)
-	info, err := c.RepoInfo(context.Background(), "techthos/microstore")
+	info, err := c.RepoInfo(context.Background(), "techthos/binzaar")
 	if err != nil {
 		t.Fatalf("RepoInfo: %v", err)
 	}
-	if info.FullName != "techthos/microstore" || info.Stars != 7 || info.Homepage != "https://example.test" {
+	if info.FullName != "techthos/binzaar" || info.Stars != 7 || info.Homepage != "https://example.test" {
 		t.Errorf("info = %+v", info)
 	}
 }
@@ -103,7 +103,7 @@ func TestRepoInfoInvalidSlug(t *testing.T) {
 func TestReleasesNewestFirst(t *testing.T) {
 	t.Parallel()
 	c, _ := newClient(t)
-	rels, err := c.Releases(context.Background(), "techthos/microstore")
+	rels, err := c.Releases(context.Background(), "techthos/binzaar")
 	if err != nil {
 		t.Fatalf("Releases: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestReleasesNewestFirst(t *testing.T) {
 func TestLatestReleaseSkipsPrerelease(t *testing.T) {
 	t.Parallel()
 	c, _ := newClient(t)
-	rel, err := c.LatestRelease(context.Background(), "techthos/microstore")
+	rel, err := c.LatestRelease(context.Background(), "techthos/binzaar")
 	if err != nil {
 		t.Fatalf("LatestRelease: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestRateLimitError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := github.New(github.WithBaseURL(srv.URL), github.WithHTTPClient(srv.Client()), github.WithToken(""))
-	_, err := c.RepoInfo(context.Background(), "techthos/microstore")
+	_, err := c.RepoInfo(context.Background(), "techthos/binzaar")
 	if err == nil || !strings.Contains(err.Error(), "rate limit") {
 		t.Fatalf("err = %v, want rate-limit error", err)
 	}
@@ -185,7 +185,7 @@ func TestAuthHeaderSentWhenTokenSet(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := github.New(github.WithBaseURL(srv.URL), github.WithHTTPClient(srv.Client()), github.WithToken("secret"))
-	if _, err := c.RepoInfo(context.Background(), "techthos/microstore"); err != nil {
+	if _, err := c.RepoInfo(context.Background(), "techthos/binzaar"); err != nil {
 		t.Fatalf("RepoInfo: %v", err)
 	}
 	if gotAuth != "Bearer secret" {

@@ -1,4 +1,4 @@
-// Package app is microstore's use-case layer. It orchestrates the GitHub client,
+// Package app is binzaar's use-case layer. It orchestrates the GitHub client,
 // the bbolt repositories, the installer, and the scaffolder into the product
 // use-cases, returning plain domain models. Both internal/server (MCP)
 // and internal/tui depend on this package so the orchestration lives in exactly
@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"techthos.net/microstore/internal/db"
-	"techthos.net/microstore/internal/install"
-	"techthos.net/microstore/internal/models"
-	"techthos.net/microstore/internal/scaffold"
+	"techthos.net/binzaar/internal/db"
+	"techthos.net/binzaar/internal/install"
+	"techthos.net/binzaar/internal/models"
+	"techthos.net/binzaar/internal/scaffold"
 )
 
 // Cataloger is the GitHub surface the service needs. *github.Client satisfies it.
@@ -90,7 +90,7 @@ func (s *Service) SaveUIPrefs(lastSection string, sidebarCollapsed bool) error {
 
 // PathStatus reports whether the configured InstallDir is reachable on the
 // current process PATH and, when it is not, the shell profile and the exact
-// export line that would put it there. microstore never rewrites PATH on its own
+// export line that would put it there. binzaar never rewrites PATH on its own
 // — this only surfaces the advice (see AddToPath for the opt-in append).
 type PathStatus struct {
 	InstallDir  string // the configured managed install directory

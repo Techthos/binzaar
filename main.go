@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"techthos.net/microstore/cmd"
+	"techthos.net/binzaar/cmd"
 )
 
 func main() {
@@ -14,4 +14,4 @@ func main() {
 	}
 }
 
-const appName = "microstore"
+const appName = "binzaar"

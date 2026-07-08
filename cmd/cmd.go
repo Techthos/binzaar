@@ -18,14 +18,14 @@ import (
 	"strings"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/db"
-	"techthos.net/microstore/internal/github"
-	"techthos.net/microstore/internal/server"
-	"techthos.net/microstore/internal/tui"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/db"
+	"techthos.net/binzaar/internal/github"
+	"techthos.net/binzaar/internal/server"
+	"techthos.net/binzaar/internal/tui"
 )
 
-const appName = "microstore"
+const appName = "binzaar"
 
 // version is overridable at build time via -ldflags.
 var version = "dev"
@@ -101,7 +101,7 @@ func parseArgs(args []string) (options, error) {
 }
 
 func defaultDBPath() string {
-	const rel = "microstore.db"
+	const rel = "binzaar.db"
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return filepath.Join(".local", "share", appName, rel)

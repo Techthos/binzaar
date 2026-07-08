@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"techthos.net/microstore/internal/install"
+	"techthos.net/binzaar/internal/install"
 )
 
 func TestOnPath(t *testing.T) {
 	t.Parallel()
 	const sep = string(os.PathListSeparator)
-	dir := filepath.Join("home", "u", ".local", "share", "microstore", "bin")
+	dir := filepath.Join("home", "u", ".local", "share", "binzaar", "bin")
 	tests := []struct {
 		name string
 		dir  string

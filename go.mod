@@ -1,4 +1,4 @@
-module techthos.net/microstore
+module techthos.net/binzaar
 
 go 1.25.10
 

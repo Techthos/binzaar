@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	bolt "go.etcd.io/bbolt"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/models"
 )
 
 // configKey is the single well-known key (within configBucket) holding the
@@ -22,7 +22,7 @@ type ConfigRepo struct {
 // defaultManifestURL is the curated catalog applied on first run. It points at
 // the raw catalog.json published from this repository; the user may override it
 // from the Config screen or set_config.
-const defaultManifestURL = "https://raw.githubusercontent.com/Techthos/microstore/main/catalog.json"
+const defaultManifestURL = "https://raw.githubusercontent.com/Techthos/binzaar/main/catalog.json"
 
 // DefaultConfig is the configuration applied on first run: the default manifest
 // URL (the curated catalog published from this repo) and the managed install
@@ -37,9 +37,9 @@ func DefaultConfig() models.Config {
 func defaultInstallDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return filepath.Join(".local", "share", "microstore", "bin")
+		return filepath.Join(".local", "share", "binzaar", "bin")
 	}
-	return filepath.Join(home, ".local", "share", "microstore", "bin")
+	return filepath.Join(home, ".local", "share", "binzaar", "bin")
 }
 
 // Load returns the persisted Config, or DefaultConfig when none has been saved.

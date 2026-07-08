@@ -9,9 +9,9 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/install"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/install"
+	"techthos.net/binzaar/internal/models"
 )
 
 type fakeSvc struct {

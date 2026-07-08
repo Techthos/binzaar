@@ -9,15 +9,15 @@ import (
 	"strings"
 )
 
-// This file is about making installed binaries *runnable*: microstore places
+// This file is about making installed binaries *runnable*: binzaar places
 // them under a managed InstallDir, but they are only executable from a shell if
 // that directory is on $PATH. These helpers detect that and produce the shell
-// profile edit a user can apply — microstore advises and (on request) appends
+// profile edit a user can apply — binzaar advises and (on request) appends
 // the line, but never silently rewrites PATH or symlinks system-wide.
 
-// pathMarker tags the block microstore appends to a shell profile so the line is
+// pathMarker tags the block binzaar appends to a shell profile so the line is
 // recognisable and AppendExport stays idempotent.
-const pathMarker = "# Added by microstore — installed app binaries on PATH"
+const pathMarker = "# Added by binzaar — installed app binaries on PATH"
 
 // OnPath reports whether dir is one of the entries in pathEnv, an
 // os.PathListSeparator-separated PATH value. Comparison is on cleaned paths so

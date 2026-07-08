@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/models"
 )
 
 // Downloader streams the content at a URL into w. github.Client satisfies it.
@@ -54,7 +54,7 @@ func (in *Installer) Install(ctx context.Context, entry models.ManifestEntry, re
 	if err := os.MkdirAll(in.destDir, 0o755); err != nil {
 		return models.InstalledApp{}, fmt.Errorf("create install dir %q: %w", in.destDir, err)
 	}
-	tmp, err := os.CreateTemp(in.destDir, ".microstore-*")
+	tmp, err := os.CreateTemp(in.destDir, ".binzaar-*")
 	if err != nil {
 		return models.InstalledApp{}, fmt.Errorf("create temp file: %w", err)
 	}
@@ -247,11 +247,9 @@ func parseChecksums(data []byte) map[string]string {
 
 // placedName is the filename an installed binary takes under InstallDir: the
 // manifest entry's Bin override when set, otherwise the repo's bare name (the
-// segment after "owner/"), prefixed with "microapp-" either way, so every
-// installed micro-app is recognisable and grouped on a shared PATH. The prefix
-// is only added when absent: catalog entries that already ship as "microapp-xy"
-// stay "microapp-xy" rather than doubling up to "microapp-microapp-xy". A ".exe"
-// suffix is preserved for Windows assets.
+// segment after "owner/"). The name is placed as-is — binzaar adds no prefix, so
+// each installed micro-app keeps its original executable name. A ".exe" suffix is
+// preserved for Windows assets.
 func placedName(entry models.ManifestEntry, assetName string) string {
 	name := entry.Bin
 	if name == "" {
@@ -259,9 +257,6 @@ func placedName(entry models.ManifestEntry, assetName string) string {
 		if i := strings.LastIndex(name, "/"); i >= 0 {
 			name = name[i+1:]
 		}
-	}
-	if !strings.HasPrefix(name, "microapp-") {
-		name = "microapp-" + name
 	}
 	if strings.HasSuffix(strings.ToLower(assetName), ".exe") && !strings.HasSuffix(strings.ToLower(name), ".exe") {
 		name += ".exe"

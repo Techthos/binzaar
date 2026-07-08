@@ -1,4 +1,4 @@
-// Package server implements microstore's Model Context Protocol server using
+// Package server implements binzaar's Model Context Protocol server using
 // github.com/mark3labs/mcp-go. It is transport-agnostic: construction and
 // registration never reference a transport (cmd selects stdio). Every tool and
 // resource delegates to the internal/app use-case layer. User/input failures are
@@ -9,15 +9,15 @@ package server
 import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/models"
 )
 
 type handler struct {
 	app *app.Service
 }
 
-// New builds the microstore MCP server with all tools and resources registered.
+// New builds the binzaar MCP server with all tools and resources registered.
 func New(svc *app.Service, name, version string) *server.MCPServer {
 	s := server.NewMCPServer(
 		name, version,

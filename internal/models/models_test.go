@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/models"
 )
 
 // roundTrip marshals a value, unmarshals it back into the same type, and
@@ -37,8 +37,8 @@ func TestRoundTrip(t *testing.T) {
 	installed := time.Date(2026, 5, 28, 9, 0, 0, 0, time.UTC)
 
 	asset := models.Asset{
-		Name:        "microstore_linux_amd64",
-		DownloadURL: "https://example.test/dl/microstore_linux_amd64",
+		Name:        "binzaar_linux_amd64",
+		DownloadURL: "https://example.test/dl/binzaar_linux_amd64",
 		Size:        1234567,
 		ContentType: "application/octet-stream",
 	}
@@ -47,7 +47,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Parallel()
 		roundTrip(t, models.Catalog{
 			Apps: []models.ManifestEntry{
-				{Repo: "techthos/microstore", Category: "tools", DisplayName: "microstore", Bin: "store"},
+				{Repo: "techthos/binzaar", Category: "tools", DisplayName: "binzaar", Bin: "store"},
 				{Repo: "techthos/foo", Category: "tools"},
 			},
 			Templates: []models.Template{
@@ -71,7 +71,7 @@ func TestRoundTrip(t *testing.T) {
 	t.Run("RepoInfo", func(t *testing.T) {
 		t.Parallel()
 		roundTrip(t, models.RepoInfo{
-			FullName:    "techthos/microstore",
+			FullName:    "techthos/binzaar",
 			Description: "a local store",
 			Homepage:    "https://example.test",
 			Stars:       42,
@@ -81,13 +81,13 @@ func TestRoundTrip(t *testing.T) {
 	t.Run("InstalledApp", func(t *testing.T) {
 		t.Parallel()
 		roundTrip(t, models.InstalledApp{
-			Repo:        "techthos/microstore",
-			DisplayName: "microstore",
+			Repo:        "techthos/binzaar",
+			DisplayName: "binzaar",
 			Category:    "tools",
 			Bin:         "store",
 			Version:     "v1.2.0",
 			AssetName:   asset.Name,
-			Path:        "/home/op/.local/share/microstore/bin/microstore",
+			Path:        "/home/op/.local/share/binzaar/bin/binzaar",
 			SHA256:      "deadbeef",
 			Size:        asset.Size,
 			InstalledAt: installed,
@@ -99,7 +99,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Parallel()
 		roundTrip(t, models.Config{
 			ManifestURL:      "https://example.test/catalog.json",
-			InstallDir:       "/home/op/.local/share/microstore/bin",
+			InstallDir:       "/home/op/.local/share/binzaar/bin",
 			LastSection:      "installed",
 			SidebarCollapsed: true,
 		})
@@ -119,7 +119,7 @@ func TestPersistedJSONTags(t *testing.T) {
 		{
 			name: "InstalledApp",
 			in: models.InstalledApp{
-				Repo:        "techthos/microstore",
+				Repo:        "techthos/binzaar",
 				Version:     "v1.0.0",
 				AssetName:   "a",
 				Path:        "/p",
@@ -128,7 +128,7 @@ func TestPersistedJSONTags(t *testing.T) {
 				InstalledAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 				SourceURL:   "u",
 			},
-			want: `{"repo":"techthos/microstore","version":"v1.0.0","asset_name":"a","path":"/p","sha256":"h","size":1,"installed_at":"2026-01-01T00:00:00Z","source_url":"u"}`,
+			want: `{"repo":"techthos/binzaar","version":"v1.0.0","asset_name":"a","path":"/p","sha256":"h","size":1,"installed_at":"2026-01-01T00:00:00Z","source_url":"u"}`,
 		},
 		{
 			name: "Config",

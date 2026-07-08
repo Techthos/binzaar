@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"techthos.net/microstore/templates"
+	"techthos.net/binzaar/templates"
 )
 
 func TestRunInit(t *testing.T) {

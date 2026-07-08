@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**microstore** is a single-binary, local "app store" for Go micro-apps: it browses a GitHub-hosted
+**binzaar** is a single-binary, local "app store" for Go micro-apps: it browses a GitHub-hosted
 catalog (`catalog.json`), installs the right release binary for the host `GOOS/GOARCH` (with SHA-256
 verification), tracks/updates/uninstalls/re-verifies those installs, and scaffolds new micro-apps
 from templates — then hands off to `/product-idea`. It is **online-only** (no offline catalog
@@ -32,9 +32,9 @@ One binary, multiple **modes** selected in `cmd/`, all backed by the same bbolt 
 - `init` → places the embedded Claude Code bootstrap kit (`.claude/` from `templates/claude-code/`)
   into the current directory and prints the phase guide — opens no DB, needs no network.
 
-The mode may lead (`microstore serve --db x`) or follow the flags (`microstore --db x serve`).
-`--db <path>` overrides the DB location (default `~/.local/share/microstore/microstore.db`).
-`MICROSTORE_GITHUB_TOKEN`, when set, authenticates GitHub requests (higher rate limits, private
+The mode may lead (`binzaar serve --db x`) or follow the flags (`binzaar --db x serve`).
+`--db <path>` overrides the DB location (default `~/.local/share/binzaar/binzaar.db`).
+`BINZAAR_GITHUB_TOKEN`, when set, authenticates GitHub requests (higher rate limits, private
 repos); otherwise access is anonymous.
 
 ```

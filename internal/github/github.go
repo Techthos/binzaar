@@ -1,7 +1,7 @@
-// Package github is microstore's outbound HTTPS client for GitHub. It fetches
+// Package github is binzaar's outbound HTTPS client for GitHub. It fetches
 // the live catalog manifest, repository info, releases/assets, and tarballs, and
 // downloads release assets. It performs no persistence — callers receive plain
-// domain models. This is client I/O only (like git or go install); microstore
+// domain models. This is client I/O only (like git or go install); binzaar
 // runs no service of its own.
 package github
 
@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/models"
 )
 
 // TokenEnv is the environment variable holding an optional GitHub token. When
 // set, requests are authenticated (higher rate limits, private repos).
-const TokenEnv = "MICROSTORE_GITHUB_TOKEN"
+const TokenEnv = "BINZAAR_GITHUB_TOKEN"
 
 const defaultAPIBase = "https://api.github.com"
 

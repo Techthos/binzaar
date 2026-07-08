@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"techthos.net/microstore/internal/db"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/db"
+	"techthos.net/binzaar/internal/models"
 )
 
 // ErrNoMCPSupport is returned by ConfigureMCP when the installed app advertises

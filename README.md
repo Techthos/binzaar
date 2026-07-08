@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/Techthos/binzaar/refs/heads/main/sc
 ```
 
 The installer detects your OS/arch, downloads the latest release binary, verifies its SHA-256
-against the `.sha256` sidecar, and installs it as `microapp-binzaar` into
+against the `.sha256` sidecar, and installs it as `store` into
 `~/.local/share/binzaar/bin` (warning if that directory is not on your `PATH`).
 
 Environment overrides:

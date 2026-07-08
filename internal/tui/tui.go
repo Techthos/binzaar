@@ -12,9 +12,9 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/install"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/install"
+	"techthos.net/binzaar/internal/models"
 )
 
 // Layout constants for the sidebar·body·status skeleton and the responsive
@@ -338,7 +338,7 @@ func (a *App) requestQuit() {
 
 func (a *App) confirmQuit() {
 	modal := tview.NewModal().
-		SetText("Quit microstore?\n\nThere are unsaved changes or work in progress.").
+		SetText("Quit binzaar?\n\nThere are unsaved changes or work in progress.").
 		AddButtons([]string{"Cancel", "Quit"}).
 		SetDoneFunc(func(_ int, label string) {
 			a.pages.RemovePage(pageConfirm)
@@ -363,7 +363,7 @@ func (a *App) buildSidebar() {
 		SetHighlightFullLine(true).
 		SetSelectedStyle(sidebarSelectedStyle())
 	a.sidebar.SetMainTextColor(tcell.GetColor(hexText))
-	a.sidebar.SetBorder(true).SetTitle(" microstore ")
+	a.sidebar.SetBorder(true).SetTitle(" binzaar ")
 	a.sidebar.SetSelectedFunc(func(i int, _ string, _ string, _ rune) {
 		if i >= 0 && i < len(sectionOrder) {
 			a.switchTo(sectionOrder[i])
@@ -931,7 +931,7 @@ func (a *App) doUninstall(repo string) {
 	}()
 }
 
-// doConfigureMCP wires the install into the .mcp.json of the directory microstore
+// doConfigureMCP wires the install into the .mcp.json of the directory binzaar
 // was launched from (the use-case resolves "" to the working directory). A no-MCP
 // app is a benign outcome surfaced as a warning, not a red error.
 func (a *App) doConfigureMCP(repo string) {
@@ -1000,7 +1000,7 @@ func (a *App) runInstalled(repo string) {
 			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 			_ = cmd.Run()
 		})
-		a.app.QueueUpdateDraw(func() { a.setStatus("%s exited — back in microstore", repo) })
+		a.app.QueueUpdateDraw(func() { a.setStatus("%s exited — back in binzaar", repo) })
 	}()
 }
 

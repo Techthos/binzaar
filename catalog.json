@@ -1,13 +1,13 @@
 {
   "apps": [
     {
-      "repo": "Techthos/microstore",
+      "repo": "Techthos/binzaar",
       "category": "tools",
-      "display_name": "microstore",
+      "display_name": "binzaar",
       "description": "Single-binary local app store for Go micro-apps: browse a GitHub catalog, install/verify release binaries, and scaffold new apps.",
       "bin": "store",
       "mcp": {
-        "command": "microapp-store",
+        "command": "store",
         "args": ["mcp"]
       }
     },
@@ -17,27 +17,27 @@
       "display_name": "clockwork",
       "description": "Time tracking and scheduling helper.",
       "mcp": {
-        "command": "microapp-clockwork",
+        "command": "clockwork",
         "args": ["mcp"]
       }
     },
     {
-      "repo": "Techthos/microapp-deskbluez",
+      "repo": "Techthos/deskbluez",
       "category": "tools",
       "display_name": "deskbluez",
       "description": "Bluetooth desk and device management utility.",
       "mcp": {
-        "command": "microapp-deskbluez",
+        "command": "deskbluez",
         "args": ["serve"]
       }
     },
     {
-      "repo": "Techthos/microapp-crm",
+      "repo": "Techthos/leadzaar",
       "category": "tools",
-      "display_name": "CRM",
+      "display_name": "Leadzaar (CRM)",
       "description": "Lightweight customer relationship management for contacts and deals.",
       "mcp": {
-        "command": "microapp-crm",
+        "command": "leadzaar",
         "args": ["-mode", "mcp"]
       }
     },

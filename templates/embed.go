@@ -1,6 +1,6 @@
-// Package templates embeds the project templates that the microstore binary
+// Package templates embeds the project templates that the binzaar binary
 // can place on disk. The canonical Claude Code bootstrap kit lives under
-// templates/claude-code/ in this repo; `microstore init` copies its contents
+// templates/claude-code/ in this repo; `binzaar init` copies its contents
 // (the .claude directory) into the current working directory.
 package templates
 

@@ -16,11 +16,11 @@ import (
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/db"
-	"techthos.net/microstore/internal/install"
-	"techthos.net/microstore/internal/models"
-	"techthos.net/microstore/internal/server"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/db"
+	"techthos.net/binzaar/internal/install"
+	"techthos.net/binzaar/internal/models"
+	"techthos.net/binzaar/internal/server"
 )
 
 type fakeGH struct {
@@ -101,7 +101,7 @@ func newClientWithStore(t *testing.T, gh app.Cataloger, store *db.Store) *client
 
 func startClient(t *testing.T, svc *app.Service) *client.Client {
 	t.Helper()
-	c, err := client.NewInProcessClient(server.New(svc, "microstore-test", "0.0.0"))
+	c, err := client.NewInProcessClient(server.New(svc, "binzaar-test", "0.0.0"))
 	if err != nil {
 		t.Fatalf("new in-process client: %v", err)
 	}

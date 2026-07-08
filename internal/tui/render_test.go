@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/models"
 )
 
 func TestCatalogRow(t *testing.T) {
@@ -179,9 +179,9 @@ func TestHelpText(t *testing.T) {
 func TestPathWarningText(t *testing.T) {
 	t.Parallel()
 	st := app.PathStatus{
-		InstallDir:  "/home/u/.local/share/microstore/bin",
+		InstallDir:  "/home/u/.local/share/binzaar/bin",
 		ProfilePath: "/home/u/.bashrc",
-		ExportLine:  `export PATH="$PATH:/home/u/.local/share/microstore/bin"`,
+		ExportLine:  `export PATH="$PATH:/home/u/.local/share/binzaar/bin"`,
 	}
 	got := pathWarningText(st)
 	for _, want := range []string{st.InstallDir, st.ProfilePath, st.ExportLine, "not on your PATH"} {

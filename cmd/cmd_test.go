@@ -51,11 +51,11 @@ func TestParseArgsUnknownFlag(t *testing.T) {
 func TestDefaultDBPath(t *testing.T) {
 	t.Parallel()
 	p := defaultDBPath()
-	if filepath.Base(p) != "microstore.db" {
-		t.Errorf("default db basename = %q, want microstore.db", filepath.Base(p))
+	if filepath.Base(p) != "binzaar.db" {
+		t.Errorf("default db basename = %q, want binzaar.db", filepath.Base(p))
 	}
-	if !strings.Contains(p, "microstore") {
-		t.Errorf("default db path %q should live under a microstore directory", p)
+	if !strings.Contains(p, "binzaar") {
+		t.Errorf("default db path %q should live under a binzaar directory", p)
 	}
 }
 

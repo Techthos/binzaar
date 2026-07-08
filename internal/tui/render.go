@@ -1,4 +1,4 @@
-// Package tui is microstore's terminal UI, built on rivo/tview. It owns the one
+// Package tui is binzaar's terminal UI, built on rivo/tview. It owns the one
 // *tview.Application and is a thin view layer: all data flows through the
 // injected Service (the internal/app use-case layer). Network and disk work runs
 // off the event loop and is funnelled back via QueueUpdateDraw; render logic
@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"techthos.net/microstore/internal/app"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/app"
+	"techthos.net/binzaar/internal/models"
 )
 
 // emDash is the dim placeholder for an empty/missing value (never blank, never
@@ -66,7 +66,7 @@ func screenTitle(section string) string {
 	if t, ok := sectionTitles[section]; ok {
 		return t
 	}
-	return "microstore"
+	return "binzaar"
 }
 
 // sidebarItems renders the sidebar labels: a numeric shortcut, the section title,
@@ -128,7 +128,7 @@ func helpText() string {
 		{"q / Ctrl-C", "quit"},
 	}
 	var b strings.Builder
-	b.WriteString("[" + tagAccent + "::b]microstore — keys[-]\n\n")
+	b.WriteString("[" + tagAccent + "::b]binzaar — keys[-]\n\n")
 	for _, r := range rows {
 		fmt.Fprintf(&b, "  ["+tagAccent+"::b]%-16s[-] %s\n", r[0], r[1])
 	}

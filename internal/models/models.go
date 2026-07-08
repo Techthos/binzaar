@@ -1,4 +1,4 @@
-// Package models holds microstore's plain domain structs. They are
+// Package models holds binzaar's plain domain structs. They are
 // storage-agnostic — no bbolt (or any persistence) imports live here — and are
 // serialized as JSON throughout, both into bbolt and across the MCP surface.
 //
@@ -26,9 +26,9 @@ type ManifestEntry struct {
 	// Description is a short, manifest-authored summary of what the app does,
 	// shown alongside the live GitHub metadata.
 	Description string `json:"description,omitempty"`
-	// Bin optionally overrides the repo's bare name in the placed filename:
-	// the installed binary is "microapp-<Bin>" instead of "microapp-<name>".
-	// The catalog uses this to list microstore itself as "microapp-store".
+	// Bin optionally overrides the repo's bare name as the placed filename:
+	// the installed binary is named "<Bin>" instead of the repo's bare name.
+	// The catalog uses this to list binzaar itself as "store".
 	Bin string `json:"bin,omitempty"`
 	// MCP, when present, tells an LLM client how to launch this app's MCP
 	// server over stdio (mirrors an .mcp.json entry).

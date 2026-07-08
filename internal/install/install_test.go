@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"techthos.net/microstore/internal/install"
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/install"
+	"techthos.net/binzaar/internal/models"
 )
 
 // fakeDL serves canned bytes per URL.
@@ -32,14 +32,14 @@ func sha(b []byte) string {
 }
 
 const (
-	assetURL = "https://example.test/microstore_linux_amd64"
+	assetURL = "https://example.test/binzaar_linux_amd64"
 	sumURL   = "https://example.test/checksums.txt"
 )
 
 var binBytes = []byte("#!/bin/sh\necho hi\n")
 
 func release(withChecksums bool) (models.Release, models.Asset) {
-	asset := models.Asset{Name: "microstore_linux_amd64", DownloadURL: assetURL, Size: int64(len(binBytes))}
+	asset := models.Asset{Name: "binzaar_linux_amd64", DownloadURL: assetURL, Size: int64(len(binBytes))}
 	assets := []models.Asset{asset}
 	if withChecksums {
 		assets = append(assets, models.Asset{Name: "checksums.txt", DownloadURL: sumURL})
@@ -48,7 +48,7 @@ func release(withChecksums bool) (models.Release, models.Asset) {
 }
 
 func entry() models.ManifestEntry {
-	return models.ManifestEntry{Repo: "techthos/microstore", DisplayName: "microstore", Category: "tools"}
+	return models.ManifestEntry{Repo: "techthos/binzaar", DisplayName: "binzaar", Category: "tools"}
 }
 
 func TestMatchAssets(t *testing.T) {
@@ -94,7 +94,7 @@ func TestMatchAssets(t *testing.T) {
 func TestInstallVerifiedSuccess(t *testing.T) {
 	t.Parallel()
 	dest := t.TempDir()
-	sumFile := fmt.Sprintf("%s  microstore_linux_amd64\n", sha(binBytes))
+	sumFile := fmt.Sprintf("%s  binzaar_linux_amd64\n", sha(binBytes))
 	dl := fakeDL{files: map[string][]byte{assetURL: binBytes, sumURL: []byte(sumFile)}}
 	rel, asset := release(true)
 
@@ -105,10 +105,10 @@ func TestInstallVerifiedSuccess(t *testing.T) {
 	if got.SHA256 != sha(binBytes) {
 		t.Errorf("SHA256 = %s, want %s", got.SHA256, sha(binBytes))
 	}
-	if got.Version != "v1.0.0" || got.Repo != "techthos/microstore" || got.DisplayName != "microstore" {
+	if got.Version != "v1.0.0" || got.Repo != "techthos/binzaar" || got.DisplayName != "binzaar" {
 		t.Errorf("record = %+v", got)
 	}
-	wantPath := filepath.Join(dest, "microapp-microstore")
+	wantPath := filepath.Join(dest, "binzaar")
 	if got.Path != wantPath {
 		t.Errorf("Path = %s, want %s", got.Path, wantPath)
 	}
@@ -121,10 +121,11 @@ func TestInstallVerifiedSuccess(t *testing.T) {
 	}
 }
 
-// TestInstallPlacedNamePrefix pins the focus contract: installed binaries land
-// under InstallDir as "microapp-<repo bare name>" (or "microapp-<bin>" when the
-// manifest entry overrides the name), with any ".exe" preserved.
-func TestInstallPlacedNamePrefix(t *testing.T) {
+// TestInstallPlacedName pins the focus contract: installed binaries land under
+// InstallDir with their original name — the repo's bare name (or the manifest
+// entry's bin override when set), placed as-is with no prefix, and any ".exe"
+// preserved.
+func TestInstallPlacedName(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name      string
@@ -133,13 +134,13 @@ func TestInstallPlacedNamePrefix(t *testing.T) {
 		assetName string
 		want      string
 	}{
-		{name: "posix binary", repo: "techthos/microstore", assetName: "microstore_linux_amd64", want: "microapp-microstore"},
-		{name: "windows exe preserves suffix", repo: "acme/tool", assetName: "tool_windows_amd64.exe", want: "microapp-tool.exe"},
-		{name: "repo without owner segment", repo: "solo", assetName: "solo_linux_arm64", want: "microapp-solo"},
-		{name: "bin override replaces bare name", repo: "techthos/microstore", bin: "store", assetName: "microstore_linux_amd64", want: "microapp-store"},
-		{name: "bin override keeps exe suffix", repo: "acme/tool", bin: "kit", assetName: "tool_windows_amd64.exe", want: "microapp-kit.exe"},
-		{name: "repo already prefixed is not doubled", repo: "acme/microapp-xy", assetName: "microapp-xy_linux_amd64", want: "microapp-xy"},
-		{name: "bin override already prefixed is not doubled", repo: "acme/tool", bin: "microapp-kit", assetName: "tool_linux_amd64", want: "microapp-kit"},
+		{name: "posix binary", repo: "techthos/binzaar", assetName: "binzaar_linux_amd64", want: "binzaar"},
+		{name: "windows exe preserves suffix", repo: "acme/tool", assetName: "tool_windows_amd64.exe", want: "tool.exe"},
+		{name: "repo without owner segment", repo: "solo", assetName: "solo_linux_arm64", want: "solo"},
+		{name: "bin override replaces bare name", repo: "techthos/binzaar", bin: "store", assetName: "binzaar_linux_amd64", want: "store"},
+		{name: "bin override keeps exe suffix", repo: "acme/tool", bin: "kit", assetName: "tool_windows_amd64.exe", want: "kit.exe"},
+		{name: "microapp-named repo keeps its original name", repo: "acme/microapp-xy", assetName: "microapp-xy_linux_amd64", want: "microapp-xy"},
+		{name: "bin override used verbatim", repo: "acme/tool", bin: "microapp-kit", assetName: "tool_linux_amd64", want: "microapp-kit"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -175,13 +176,13 @@ func TestInstallPlacedNamePrefix(t *testing.T) {
 func TestInstallVerifiedSidecar(t *testing.T) {
 	t.Parallel()
 	dest := t.TempDir()
-	const sideURL = "https://example.test/microstore_linux_amd64.sha256"
-	asset := models.Asset{Name: "microstore_linux_amd64", DownloadURL: assetURL, Size: int64(len(binBytes))}
+	const sideURL = "https://example.test/binzaar_linux_amd64.sha256"
+	asset := models.Asset{Name: "binzaar_linux_amd64", DownloadURL: assetURL, Size: int64(len(binBytes))}
 	rel := models.Release{TagName: "v1.4.0", Assets: []models.Asset{
 		asset,
-		{Name: "microstore_linux_amd64.sha256", DownloadURL: sideURL},
+		{Name: "binzaar_linux_amd64.sha256", DownloadURL: sideURL},
 	}}
-	sideFile := fmt.Sprintf("%s  microstore_linux_amd64\n", sha(binBytes))
+	sideFile := fmt.Sprintf("%s  binzaar_linux_amd64\n", sha(binBytes))
 	dl := fakeDL{files: map[string][]byte{assetURL: binBytes, sideURL: []byte(sideFile)}}
 
 	got, err := install.New(dl, dest).Install(context.Background(), entry(), rel, asset, install.Options{})
@@ -196,7 +197,7 @@ func TestInstallVerifiedSidecar(t *testing.T) {
 func TestInstallChecksumMismatch(t *testing.T) {
 	t.Parallel()
 	dest := t.TempDir()
-	sumFile := "00deadbeef  microstore_linux_amd64\n"
+	sumFile := "00deadbeef  binzaar_linux_amd64\n"
 	dl := fakeDL{files: map[string][]byte{assetURL: binBytes, sumURL: []byte(sumFile)}}
 	rel, asset := release(true)
 
@@ -205,7 +206,7 @@ func TestInstallChecksumMismatch(t *testing.T) {
 		t.Fatal("expected checksum mismatch error")
 	}
 	// No partial binary left behind.
-	if _, statErr := os.Stat(filepath.Join(dest, "microstore")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(dest, "binzaar")); !os.IsNotExist(statErr) {
 		t.Errorf("binary should not exist after mismatch, stat err = %v", statErr)
 	}
 	entries, _ := os.ReadDir(dest)
@@ -224,7 +225,7 @@ func TestInstallNoChecksumsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected refusal when no checksums file present")
 	}
-	if _, statErr := os.Stat(filepath.Join(dest, "microstore")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(dest, "binzaar")); !os.IsNotExist(statErr) {
 		t.Errorf("binary should not exist when refused")
 	}
 }

@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"techthos.net/microstore/internal/models"
+	"techthos.net/binzaar/internal/models"
 )
 
 // HostOS / HostArch report the running host's GOOS / GOARCH.
