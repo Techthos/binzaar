@@ -5,7 +5,7 @@
       "category": "tools",
       "display_name": "binzaar",
       "description": "Single-binary local app store for Go micro-apps: browse a GitHub catalog, install/verify release binaries, and scaffold new apps.",
-      "bin": "store",
+      "bin": "binzaar",
       "mcp": {
         "command": "store",
         "args": ["mcp"]

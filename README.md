@@ -1,4 +1,8 @@
-# Binzaar
+<p align="center">
+  <img src="assets/binzaar-banner.png" alt="Binzaar" width="100%">
+</p>
+
+# <img src="assets/binzaar-icon.png" alt="" width="28" align="top"> Binzaar
 
 > **bin** (binary) + ba**zaar** (market) — a tiny local marketplace that trades release binaries.
 
