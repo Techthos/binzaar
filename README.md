@@ -116,7 +116,8 @@ binzaar init           # drop the embedded Claude Code starter kit into the curr
 `--db <path>` overrides the database location for the `tui` and `mcp` modes
 (default `~/.local/share/binzaar/binzaar.db`). `serve-catalog` validates the catalog file at
 startup, re-reads it on every request (edits show up without a restart), and needs neither the
-database nor GitHub.
+database nor GitHub. To run it in a container, see
+[docs/serve-registry-docker-compose.md](docs/serve-registry-docker-compose.md).
 
 ## Configuration
 
