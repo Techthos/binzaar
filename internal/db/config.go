@@ -19,17 +19,18 @@ type ConfigRepo struct {
 	db *bolt.DB
 }
 
-// defaultManifestURL is the curated catalog applied on first run. It points at
-// the raw catalog.json published from this repository; the user may override it
-// from the Config screen or set_config.
-const defaultManifestURL = "https://raw.githubusercontent.com/Techthos/binzaar/main/catalog.json"
+// defaultRegistryURL is binzaar's default registry URL — the catalog applied
+// on first run (UC 1). It currently points at the raw catalog.json published
+// from this repository; once the hosted binzaar registry is implemented and
+// deployed, its URL replaces this value (this constant is the single place the
+// swap happens). The user may override it from the Config screen or set_config.
+const defaultRegistryURL = "https://raw.githubusercontent.com/Techthos/binzaar/main/catalog.json"
 
-// DefaultConfig is the configuration applied on first run: the default manifest
-// URL (the curated catalog published from this repo) and the managed install
-// directory under the user's home.
+// DefaultConfig is the configuration applied on first run: the default
+// registry URL and the managed install directory under the user's home.
 func DefaultConfig() models.Config {
 	return models.Config{
-		ManifestURL: defaultManifestURL,
+		ManifestURL: defaultRegistryURL,
 		InstallDir:  defaultInstallDir(),
 	}
 }

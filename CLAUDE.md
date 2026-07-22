@@ -17,7 +17,7 @@ shared domain —
 - an **MCP server** over stdio (`mark3labs/mcp-go`), for use by LLM clients,
 - a **tview terminal UI**.
 
-`docs/SPECIFICATIONS.md` is the **contract** — the 12 use-cases (UC 1–12), the full MCP tool/resource
+`docs/SPECIFICATIONS.md` is the **contract** — the 15 use-cases (UC 1–15), the full MCP tool/resource
 surface, the TUI screens, and acceptance criteria. Read it before changing product behavior; per
 `.claude/rules/specification-rules.md`, spec and code change in the **same commit**. The per-layer
 conventions live in `.claude/rules/` and load automatically when you edit a matching path — they,
@@ -28,11 +28,14 @@ not this file, are the source of truth for their layer.
 One binary, multiple **modes** selected in `cmd/`, all backed by the same bbolt file:
 
 - default / `tui` → launches the terminal UI;
-- `serve` / `mcp` → runs the MCP stdio server;
+- `mcp` → runs the MCP stdio server (the former `serve` alias is gone);
+- `serve-catalog` → serves a local catalog JSON file over HTTP (UC 15: `--catalog <path>`, default
+  `./catalog.json`; `--addr`, default `:8080`) so anyone can host a custom registry — opens no DB,
+  contacts no GitHub;
 - `init` → places the embedded Claude Code bootstrap kit (`.claude/` from `templates/claude-code/`)
   into the current directory and prints the phase guide — opens no DB, needs no network.
 
-The mode may lead (`binzaar serve --db x`) or follow the flags (`binzaar --db x serve`).
+The mode may lead (`binzaar mcp --db x`) or follow the flags (`binzaar --db x mcp`).
 `--db <path>` overrides the DB location (default `~/.local/share/binzaar/binzaar.db`).
 `BINZAAR_GITHUB_TOKEN`, when set, authenticates GitHub requests (higher rate limits, private
 repos); otherwise access is anonymous.
@@ -46,7 +49,8 @@ internal/
   github/             # outbound HTTPS GitHub client (catalog, repo/releases/assets, downloads, tarballs)
   install/            # download → verify SHA-256 → place 0755; Verify/Remove; host asset matching (match.go)
   scaffold/           # download template tarball → strip top-level → extract (path-traversal-safe)
-  app/                # USE-CASE LAYER: orchestrates github+db+install+scaffold into UC 1–12
+  registry/           # HTTP catalog server for `serve-catalog` (UC 15); leaf, used by cmd/ only
+  app/                # USE-CASE LAYER: orchestrates github+db+install+scaffold into UC 1–14
   server/             # MCP server (tools.go/resources.go); delegates to app.Service
   tui/                # tview view layer; owns the one *tview.Application; delegates to app.Service
 templates/            # go:embed'ed project templates; claude-code/ is the .claude kit `init` places
@@ -82,6 +86,9 @@ scaffold ────────┘        └─ tui
   plain domain models (or `*AssetSelectionError` when an install needs a manual asset pick).
 - `internal/server` and `internal/tui` each define a narrow interface that `*app.Service` satisfies,
   and call **only** through it — no bbolt, no GitHub client, no business logic in a handler/draw call.
+- `internal/registry` (the `serve-catalog` HTTP server, UC 15) is also a leaf on `models`, but sits
+  **outside** the `app` funnel: `cmd/` dispatches it directly, before the store opens, because it
+  touches neither bbolt nor GitHub.
 - `cmd/` opens the single `*bolt.DB` once, builds `app.New(github.New(), store)`, and injects that
   one `Service` into whichever mode runs. `main` stays thin.
 
@@ -91,7 +98,7 @@ scaffold ────────┘        └─ tui
    `Open` must set a `Timeout`. Practically: don't expect the MCP server and the TUI to both hold the
    same DB file read-write from two processes — design modes as alternatives, or use `ReadOnly: true`
    for a genuinely read-only consumer.
-2. **MCP stdio uses stdout as the protocol channel.** In `serve` mode, **all logging goes to stderr**.
+2. **MCP stdio uses stdout as the protocol channel.** In `mcp` mode, **all logging goes to stderr**.
    Writing logs to stdout corrupts the MCP stream.
 
 ## Layer rules — read before editing

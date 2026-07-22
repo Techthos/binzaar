@@ -13,7 +13,8 @@ shape.
 
 **Target user.** A developer/operator who uses or builds these micro-apps and works from a terminal.
 
-**Summary.** binzaar is itself one of these micro-apps. It has two faces over GitHub:
+**Summary.** binzaar is itself one of these micro-apps. It has two faces over GitHub, plus a small
+local hosting mode:
 
 - **Consume** — fetch a curated catalog (`catalog.json`) from GitHub live, browse/search it, view an
   app's releases and assets, detect the host `GOOS/GOARCH`, download the matching release asset,
@@ -27,6 +28,11 @@ shape.
   into the current directory and prints how the phases are used — it needs no network and opens no
   database. Re-running it over an existing setup **updates in place**: every file the kit ships is
   refreshed to the embedded version, while any files a user added under the kit's trees are kept.
+
+- **Host** — `binzaar serve-catalog` serves a catalog JSON document over plain HTTP so anyone can
+  run a **custom registry**: it reads a local catalog file (`--catalog <path>`, default
+  `./catalog.json`), validates that it parses as a `Catalog`, and serves it at `/catalog.json`.
+  Point another binzaar's `Config.ManifestURL` at that URL to consume it. No database, no GitHub.
 
 It is **online-only**: there is no offline catalog cache. The embedded bbolt file persists only what
 you've installed and the app's own configuration.
@@ -44,13 +50,17 @@ you've installed and the app's own configuration.
   `.claude` kit into the current directory (or update an existing one in place) and print the phase
   guide (`/product-idea` → `/app-init` → `/app-spec-sync`).
 - Expose all of the above through both a **tview TUI** and an **MCP stdio server** (full read+mutate).
+- Host a **custom registry** via `binzaar serve-catalog`: serve a local catalog JSON file over HTTP
+  for other binzaar instances to consume as their `ManifestURL`.
 - Use anonymous GitHub access by default; use a token from `BINZAAR_GITHUB_TOKEN` when present.
 
 ### Non-Goals (and the local-only envelope)
-- **binzaar runs no service of its own.** It is a single binary with no daemon, no embedded web
-  server, no broker, and no second binary required to function. Its GitHub access is **outbound HTTPS
-  client I/O** (like `git` or `go install`), not a hosted service. This is the explicit reconciliation
-  of the template envelope: *acting as an HTTP client is allowed; running a service is not.*
+- **binzaar's core runs no service of its own.** The TUI, MCP, and install/scaffold use-cases are a
+  single binary with no daemon, no broker, and no second binary required to function; their GitHub
+  access is **outbound HTTPS client I/O** (like `git` or `go install`), not a hosted service. The
+  **sole, explicit exception** is the opt-in `serve-catalog` mode (UC 15): a deliberately minimal
+  foreground HTTP server that publishes one static catalog document and nothing else — no other mode
+  listens on anything.
 - **No offline catalog cache.** Online-only: if GitHub is unreachable, browse/search/install/scaffold
   fail with a clear error. bbolt is **not** a catalog mirror.
 - **No package-manager PATH management.** Installs go to a managed directory; binzaar does not
@@ -63,8 +73,10 @@ you've installed and the app's own configuration.
 - **Scaffolding does not configure the project.** It does not set the Go module path, run `git init`,
   or rename anything — that is the job of the downstream `/app-init` step. binzaar lays down the
   bare template and initiates `/product-idea`.
-- **No private-registry / non-GitHub sources** in v1. The catalog and all binaries/tarballs come from
-  GitHub.
+- **Binaries and tarballs come from GitHub** in v1. The catalog *document* itself may be fetched from
+  any raw-JSON HTTP(S) URL (`Config.ManifestURL`) — including a custom registry hosted with
+  `binzaar serve-catalog` — but every listed app's releases, assets, and template tarballs are still
+  resolved on GitHub.
 - **No cross-arch override** in v1 (host `GOOS/GOARCH` only, with a manual asset-pick fallback).
 
 ## Domain Model
@@ -154,8 +166,11 @@ bbolt byte slice past its transaction.
 Each use-case names the entities, the surface(s), and the repository/service operations involved.
 
 1. **Configure store (first-run + edit).** *Entities:* `Config`. *Surfaces:* TUI, MCP. On first run,
-   apply defaults: `InstallDir = ~/.local/share/binzaar/bin`, `ManifestURL` = the curated catalog
-   published from this repo (`https://raw.githubusercontent.com/Techthos/binzaar/main/catalog.json`).
+   apply defaults: `InstallDir = ~/.local/share/binzaar/bin`, `ManifestURL` = the **default registry
+   URL**. That default is currently the curated catalog published from this repo
+   (`https://raw.githubusercontent.com/Techthos/binzaar/main/catalog.json`); it will be replaced by
+   the hosted binzaar registry's URL once that registry is implemented and deployed (the constant is
+   the single place the swap happens).
    The user may change either from the Config screen / `set_config`. The same singleton also holds
    two lightweight TUI **view preferences** — `LastSection` (the section the app reopens on) and
    `SidebarCollapsed` — written only by the TUI (so the app reopens where it was left); `get_config`
@@ -218,6 +233,15 @@ Each use-case names the entities, the surface(s), and the repository/service ope
     file is preserved; a present-but-malformed file is an error (never silently overwritten). An app
     that advertises no MCP server is reported as a clear no-op, not a failure. *Ops:* `InstallRepo.Get`
     + read/modify/write `.mcp.json`. No network, no bbolt write.
+15. **Serve a catalog over HTTP (custom registry).** *Entities:* `Catalog`. *Surface:* **CLI mode
+    only** (`binzaar serve-catalog`) — no TUI screen, no MCP tool. Reads a local catalog JSON file —
+    `--catalog <path>`, default `./catalog.json` in the working directory — validates at startup that
+    it exists and parses as a `Catalog` (fail fast with a clear error otherwise), then serves it over
+    plain HTTP on `--addr` (default `:8080`): `GET /catalog.json` and `GET /` return the document
+    with `Content-Type: application/json`. The file is **re-read on every request** so edits are
+    picked up without a restart; a file that becomes unreadable or invalid after startup yields
+    HTTP 500. Other paths → 404; non-GET methods → 405. The mode opens no database, performs no
+    GitHub I/O, and ignores `--db`. *Ops:* local file read + `net/http`; no bbolt, no GitHub client.
 
 ## User Stories
 
@@ -238,6 +262,10 @@ Each use-case names the entities, the surface(s), and the repository/service ope
 - As a developer, I want to pick a starting template and scaffold a new project into a directory, then
   drop straight into `/product-idea`, so I can begin a new micro-app immediately. *(UC 11, UC 12)*
 
+**Hosting (CLI) — UC 15**
+- As a registry operator, I want to serve my own `catalog.json` over HTTP with one command so my
+  team can point their binzaar's `ManifestURL` at a custom registry. *(UC 15)*
+
 **Automation (MCP) — UC 2–12, 14**
 - As an LLM client, I want tools to browse/search/inspect the catalog and list installs so I can
   reason about available and installed apps. *(UC 2–5, 7, 11)*
@@ -253,7 +281,7 @@ Each use-case names the entities, the surface(s), and the repository/service ope
 ## MCP Surface
 
 Server built with `mark3labs/mcp-go` (`internal/server`), transport-agnostic; stdio selected in
-`cmd/` for `serve`/`mcp` mode. Capabilities: tools + resources, `WithRecovery()`, `WithLogging()`.
+`cmd/` for `mcp` mode. Capabilities: tools + resources, `WithRecovery()`, `WithLogging()`.
 User/input failures → `mcp.NewToolResultError(...), nil`; infrastructure/transport failures → `nil, err`.
 Non-trivial inputs use typed handlers with `jsonschema`-tagged structs. **All logging goes to stderr**
 (stdout is the protocol channel).
@@ -460,20 +488,30 @@ lists, `Ctrl`-chords in forms):
   entry exists but is **not** a directory, init refuses with a clear error and writes nothing. The
   mode never opens the database, performs no network I/O, and ignores `--db`. The kit is embedded
   from `templates/claude-code/` at build time.
+- **UC 15 — `serve-catalog` mode:** `binzaar serve-catalog` with no flags serves `./catalog.json`
+  on `:8080`; `--catalog <path>` selects a different file and `--addr` a different listen address.
+  A missing or non-`Catalog`-parsable file aborts startup with a clear error before listening.
+  While running, `GET /catalog.json` and `GET /` return the current file bytes with
+  `Content-Type: application/json` (edits to the file are visible on the next request without a
+  restart); any other path returns 404, any non-GET method 405, and a file that becomes unreadable
+  or invalid returns 500. The mode never opens the database, never contacts GitHub, and ignores
+  `--db`.
 - **PATH check (TUI launch):** When `InstallDir` is absent from `$PATH`, launching the TUI raises a
   modal showing the exact `export PATH="$PATH:<InstallDir>"` line and the target shell profile
   (`~/.zshrc` for zsh, else `~/.bashrc`). Confirming appends that line to the profile (idempotently;
   the file is created if missing) and leaves the running process's `PATH` unchanged; dismissing makes
   no change. When `InstallDir` is already on `$PATH`, no modal appears. binzaar never modifies the
   profile without confirmation and never alters `PATH` by any other means.
-- **Cross-cutting:** In `serve`/`mcp` mode no logs are written to stdout. bbolt is opened with a
+- **Cross-cutting:** In `mcp` mode no logs are written to stdout. bbolt is opened with a
   `Timeout`; a second writer process fails fast rather than hanging. The TUI never blocks its event
   loop during network/disk operations.
 
 ## Open Questions / Assumptions
 
-- **Modes & lock.** Default invocation → TUI; `serve`/`mcp` → MCP stdio server; `init` → place the
-  embedded Claude Code bootstrap kit into the current directory (or update it in place) and exit (no DB, no network);
+- **Modes & lock.** Default invocation → TUI; `mcp` → MCP stdio server (the former `serve` alias
+  is **removed** — `serve` is no longer a valid mode); `serve-catalog` → catalog HTTP server (UC 15;
+  no DB, no GitHub); `init` → place the embedded Claude Code bootstrap kit into the current
+  directory (or update it in place) and exit (no DB, no network);
   `--db <path>` overrides the DB location (default `~/.local/share/binzaar/binzaar.db`).
   Because bbolt takes a process-wide write lock, the TUI and the MCP server are **alternative
   modes**, not concurrent against one file. *Assumption accepted.*

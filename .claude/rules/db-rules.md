@@ -29,8 +29,11 @@ These rules apply when working in `internal/db` (the storage layer) and `interna
   before the txn closes. Never return or store a raw bbolt slice past `View`/`Update`.
 - Keys are stored in **byte-sorted order**. Exploit this for range/prefix scans; design
   key encodings (e.g. zero-padded numbers, RFC3339 timestamps) so lexical order == logical order.
-- A read-write transaction takes a **process-wide exclusive lock**; only one writer at a time.
-  Many concurrent readers are fine. Never open the same file from two processes read-write.
+- The lock is taken at **`Open`, not per transaction**: a read-write open holds a process-wide
+  **exclusive** lock until `Close`; a `ReadOnly` open holds a **shared** lock. A shared lock blocks
+  any exclusive lock — *including one the same process wants on a second handle*. So a persistently
+  held read handle blocks all writers; the only way two processes can both write is for **neither to
+  hold any handle while idle**.
 
 ## Database location — one resolver, env-var overridable
 
@@ -82,18 +85,36 @@ func DefaultPath() (string, error) {
 }
 ```
 
-## Opening the database
+## Opening the database — connection-per-operation (this project)
 
-Open once at startup, keep the `*bolt.DB` for the process lifetime, and always set a `Timeout`
-so a stale lock fails fast instead of blocking forever.
+This project lets the TUI and MCP modes run as **concurrent processes** against one file, so it does
+**not** keep a `*bolt.DB` for the process lifetime. Instead the `Store` holds only the **path** and
+opens bbolt **per operation**: a short-lived `ReadOnly` handle for reads, a short-lived read-write
+handle for writes, closed immediately. An idle process holds no lock. See
+`docs/bbolt-concurrent-access-strategy.md` for the full rationale and reference implementation.
+
+- **Bootstrap once.** At startup, open read-write a single time to create the file and run the
+  idempotent migration, then close — `ReadOnly` opens can't create a missing file.
+- **Short `Timeout` + backoff retry.** Use a short per-attempt `Timeout` and retry on
+  `errors.ErrTimeout` (from `go.etcd.io/bbolt/errors`) with backoff up to a small budget, so a brief
+  cross-process collision becomes a sub-second wait rather than a hard failure.
+- **Keep operations short** — the lock is held for the whole `Open`→`Close` span, so no blocking,
+  network, or user I/O inside `view`/`update`; each atomic use-case is a **single** `update` txn.
+- **Change detection:** `Tx.ID()` (exposed as `Store.TxID()`) is bbolt's monotonic committed txid;
+  long-lived readers poll it to detect another process's writes without scanning data.
 
 ```go
-db, err := bolt.Open(path, 0600, &bolt.Options{Timeout: 2 * time.Second})
+// Per-operation open with retry (see internal/db/db.go for the full version).
+bdb, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: 75 * time.Millisecond, ReadOnly: readOnly})
 if err != nil {
-    return fmt.Errorf("open bbolt at %q: %w", path, err)
+    return fmt.Errorf("open bbolt at %q (readOnly=%v): %w", path, readOnly, err)
 }
-// defer db.Close() at the owning scope
+defer bdb.Close()
 ```
+
+> **When this is the wrong model:** for a single-process app (one surface, no concurrent processes),
+> prefer the standard "open once, hold for the lifetime" approach — it's simpler and faster. The
+> per-operation model is specifically for low-contention multi-process sharing.
 
 - Use `ReadOnly: true` for shared read-only access (no exclusive lock).
 - Tune only when justified: `NoFreelistSync: true` + `FreelistType: bolt.FreelistMapType`
@@ -144,12 +165,63 @@ if err != nil {
 - `Bucket.ForEach(func(k, v []byte) error)` to walk every pair in lexicographical order. **`v == nil` means the entry is a nested bucket, not a value** — check it. Iteration stops on the first non-nil error. Do **not** mutate the bucket during `ForEach`.
 - `tx.ForEach(func(name []byte, b *bolt.Bucket) error)` walks **top-level buckets**; combine with `b.Stats().KeyN` for per-bucket key counts (useful for diagnostics/migrations).
 
+## List queries — pagination, search & ordering
+
+Open-ended list queries that back a `list_*` MCP tool follow one shape, so agents get a flexible,
+bounded surface (search + ordering + pagination) instead of an unbounded dump. `QueryLeads` /
+`LeadQuery` / `LeadPage` in `internal/db/leads.go` is the **reference implementation** — mirror it
+when adding or extending a list query. (A tiny, fixed-size list may stay a plain unpaginated slice;
+the moment a list is searchable, sortable, or can grow past a screenful, it takes this shape.)
+
+The pattern, per entity `X`:
+
+- **Input struct `XQuery`** — zero values mean "no filter"; criteria compose with **AND**:
+  - filter fields (e.g. status/stage); enum filters validated up front (invalid → reject **before**
+    scanning, wrapped over the enum sentinel).
+  - `Search string` — case-insensitive substring; lowercase+trim once, blank means "no search".
+    Match name/email/tags and **resolve linked company names via `companyNames(tx)`** so a record
+    stays findable by its company even though that's now a reference.
+  - `SortBy XSort` (a string enum with a `Valid()` method) — `""` defaults to creation order;
+    invalid → reject. Always tie-break on **ID** so the order is a strict total order.
+  - `Asc bool` — the zero value (`false`) means **descending** (newest/highest first), the natural
+    default; set it to flip to ascending. (Don't use a `Desc` field — then the zero value would be
+    ascending and contradict the default.)
+  - `Page int` (1-based; `< 1` → 1) and `PageSize int` (clamped to `[1, maxPageSize]`; `0` → default).
+- **Result struct `XPage`** — the page slice plus metadata describing the **full filtered set**
+  (not just the page) so the caller can walk the rest: `Page`, `PageSize`, `Total`, `TotalPages`,
+  `HasMore`.
+- **Method `Store.QueryX(XQuery) (XPage, error)`** — validate, normalize page/size/sort, then in one
+  short `View`: full primary-bucket scan → in-memory filter → `sort.SliceStable` → slice out the
+  page. The in-memory scan is acceptable at single-user scale (hundreds–low thousands of rows); **no
+  per-field index in v1** — adding one is a spec change.
+
+```go
+const (
+    maxLeadPageSize     = 50 // hard ceiling — requests above this are clamped, never rejected
+    defaultLeadPageSize = 50
+)
+
+size := q.PageSize
+switch {
+case size < 1:
+    size = defaultLeadPageSize
+case size > maxLeadPageSize:
+    size = maxLeadPageSize // clamp, don't error
+}
+```
+
+The **max page size is 50** across list queries. Over-max requests are **clamped**, not rejected.
+The MCP handler maps args → `XQuery`, then wraps the page as
+`{ <items>: [...], page, page_size, total, total_pages, has_more }` — the one list tool that returns
+more than the bare `{ <items>: [...] }` single-key object (see `mcp-server.md`). Keep the simple
+`Store.ListX(...)` helper too when internal callers (TUI, prompts) want the whole set unpaginated.
+
 ## Errors
 
 - bbolt exposes stable sentinel errors; match with `errors.Is`, never on string text. Common ones:
   - Buckets: `bolt.ErrBucketNotFound`, `bolt.ErrBucketExists`, `bolt.ErrBucketNameRequired`, `bolt.ErrIncompatibleValue`.
   - Keys/values: `bolt.ErrKeyRequired`, `bolt.ErrKeyTooLarge`, `bolt.ErrValueTooLarge`.
-  - Transactions/DB: `bolt.ErrTxClosed`, `bolt.ErrTxNotWritable`, `bolt.ErrDatabaseNotOpen`, `bolt.ErrDatabaseReadOnly`, `bolt.ErrTimeout` (lock-acquire timeout from `Open`).
+  - Transactions/DB: `bolt.ErrTxClosed`, `bolt.ErrTxNotWritable`, `bolt.ErrDatabaseNotOpen`, `bolt.ErrDatabaseReadOnly`. The lock-acquire timeout from `Open` is `errors.ErrTimeout` in the `go.etcd.io/bbolt/errors` subpackage (the top-level `bolt.ErrTimeout` alias is **deprecated** — import the subpackage as `bolterrors` and match `bolterrors.ErrTimeout`).
 - A `nil` from `Get` is **not** an error — it means the key is absent. Handle it explicitly.
 
 ## Durability & performance

@@ -2,8 +2,10 @@
 // bbolt store, wire dependencies), and dispatches to either the TUI or the MCP
 // stdio server. main stays thin and calls Run.
 //
-// Modes: default (or "tui") launches the terminal UI; "serve"/"mcp" runs the MCP
-// stdio server; "init" places the embedded Claude Code bootstrap kit (.claude)
+// Modes: default (or "tui") launches the terminal UI; "mcp" runs the MCP stdio
+// server; "serve-catalog" serves a local catalog JSON file over HTTP (UC 15;
+// --catalog picks the file, --addr the listen address; no database);
+// "init" places the embedded Claude Code bootstrap kit (.claude)
 // into the current directory and touches no database. A shared --db flag
 // overrides the database location. Because bbolt takes a process-wide write
 // lock, the modes are alternatives, not concurrent against one file.
@@ -21,6 +23,7 @@ import (
 	"techthos.net/binzaar/internal/app"
 	"techthos.net/binzaar/internal/db"
 	"techthos.net/binzaar/internal/github"
+	"techthos.net/binzaar/internal/registry"
 	"techthos.net/binzaar/internal/server"
 	"techthos.net/binzaar/internal/tui"
 )
@@ -31,8 +34,10 @@ const appName = "binzaar"
 var version = "dev"
 
 type options struct {
-	dbPath string
-	mode   string
+	dbPath      string
+	mode        string
+	catalogPath string
+	addr        string
 }
 
 // Run parses args, opens the store once, and dispatches to the selected mode.
@@ -42,9 +47,9 @@ func Run(args []string) error {
 		return err
 	}
 	switch opt.mode {
-	case "", "tui", "serve", "mcp", "init":
+	case "", "tui", "mcp", "serve-catalog", "init":
 	default:
-		return fmt.Errorf("unknown mode %q (use \"\", \"tui\", \"serve\", \"mcp\", or \"init\")", opt.mode)
+		return fmt.Errorf("unknown mode %q (use \"\", \"tui\", \"mcp\", \"serve-catalog\", or \"init\")", opt.mode)
 	}
 
 	// init writes the bootstrap kit into the working directory and never
@@ -55,6 +60,12 @@ func Run(args []string) error {
 			return fmt.Errorf("determine working directory: %w", err)
 		}
 		return runInit(wd, os.Stdout)
+	}
+
+	// serve-catalog serves a local catalog file over HTTP (UC 15) and never
+	// touches the database or GitHub, so it also dispatches before the store.
+	if opt.mode == "serve-catalog" {
+		return registry.Serve(opt.addr, opt.catalogPath)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(opt.dbPath), 0o755); err != nil {
@@ -69,7 +80,7 @@ func Run(args []string) error {
 	svc := app.New(github.New(), store)
 
 	switch opt.mode {
-	case "serve", "mcp":
+	case "mcp":
 		// stdout is the MCP protocol channel; never log to it here.
 		return mcpserver.ServeStdio(server.New(svc, appName, version))
 	default:
@@ -88,6 +99,8 @@ func parseArgs(args []string) (options, error) {
 	fs := flag.NewFlagSet(appName, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	dbPath := fs.String("db", "", "path to the bbolt database file")
+	catalogPath := fs.String("catalog", "catalog.json", "catalog JSON file to serve (serve-catalog mode)")
+	addr := fs.String("addr", ":8080", "listen address (serve-catalog mode)")
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
 	}
@@ -97,7 +110,7 @@ func parseArgs(args []string) (options, error) {
 	if *dbPath == "" {
 		*dbPath = defaultDBPath()
 	}
-	return options{dbPath: *dbPath, mode: mode}, nil
+	return options{dbPath: *dbPath, mode: mode, catalogPath: *catalogPath, addr: *addr}, nil
 }
 
 func defaultDBPath() string {

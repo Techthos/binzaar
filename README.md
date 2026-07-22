@@ -25,7 +25,8 @@ contract.
 ## Concept
 
 - **Standalone micro-app, shipped as one binary.** A single executable that runs completely locally
-  — no daemon, no embedded web server, no second process required to function.
+  — no daemon, no second process required to function. (The one opt-in exception: `serve-catalog`
+  runs a minimal foreground HTTP server for hosting a custom registry.)
 - **No SaaS, no accounts, no backend.** Everything lives on your machine; the only persistence is a
   local embedded database (bbolt) holding your installs and config. Your data never leaves the box.
 - **Full MCP support.** Every use-case is exposed over an MCP stdio server, so an LLM client can
@@ -37,8 +38,11 @@ contract.
 - **Trust by default.** Installs match your host `GOOS/GOARCH` automatically and are **SHA-256
   verified** against the release's checksums before anything lands on disk; unverifiable assets are
   refused unless you explicitly allow them.
-- **Online-only, GitHub-backed.** The catalog and every binary/tarball come live from GitHub —
-  outbound HTTPS client I/O only (like `git` or `go install`), never a hosted service.
+- **Online-only, GitHub-backed.** Every binary/tarball comes live from GitHub — outbound HTTPS
+  client I/O only (like `git` or `go install`). The catalog itself is fetched from the configured
+  registry URL (the default registry by default, or any custom one).
+- **Custom registries.** `binzaar serve-catalog` serves a local `catalog.json` over HTTP so a team
+  can host its own registry; point another binzaar's manifest URL at it to consume it.
 - **Self-hosting.** Binzaar lists itself in the catalog, so it installs and updates itself alongside
   the apps it manages.
 - **A forge, not just a shelf.** Scaffold brand-new micro-apps from catalog templates and hand off
@@ -98,6 +102,21 @@ Run a single test:
 ```sh
 go test ./... -run TestName -race -v
 ```
+
+## Usage
+
+```sh
+binzaar                # terminal UI (default; `binzaar tui` is equivalent)
+binzaar mcp            # MCP stdio server for LLM clients
+binzaar serve-catalog  # serve ./catalog.json over HTTP on :8080 (custom registry)
+binzaar serve-catalog --catalog /path/to/catalog.json --addr :9090
+binzaar init           # drop the embedded Claude Code starter kit into the current directory
+```
+
+`--db <path>` overrides the database location for the `tui` and `mcp` modes
+(default `~/.local/share/binzaar/binzaar.db`). `serve-catalog` validates the catalog file at
+startup, re-reads it on every request (edits show up without a restart), and needs neither the
+database nor GitHub.
 
 ## Configuration
 
