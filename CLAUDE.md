@@ -103,6 +103,7 @@ scaffold ────────┘        └─ tui
 | `internal/tui/**` | `.claude/rules/tui-rules.md` (single-goroutine event loop, `QueueUpdateDraw`, layout, testing) |
 | `internal/**/*_test.go` | `.claude/rules/go-testing.md` (black-box packages, table-driven subtests, testify usage) |
 | `.github/workflows/**` | `.claude/rules/github-actions.md` (least-privilege permissions, SHA-pinned third-party actions) |
+| `Makefile` | `.claude/rules/makefile-rules.md` (`build` must place the binary at `./bin/<binary-name>` — always the `go build` output) |
 | anything that changes product behavior | `.claude/rules/specification-rules.md` (always-on: keep `docs/SPECIFICATIONS.md` in sync with the code) |
 
 `internal/app`, `internal/github`, `internal/install`, and `internal/scaffold` have no dedicated
@@ -120,7 +121,7 @@ generates a tag-triggered cross-platform release workflow with checksums. Day to
 
 ```
 make run      # go run .
-make build    # go build ./...
+make build    # go build -o bin/binzaar .
 make test     # go test ./... -race -cover
 make fmt      # gofumpt -w .
 make lint     # golangci-lint run

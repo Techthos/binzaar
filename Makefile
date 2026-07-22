@@ -8,7 +8,7 @@ run:
 	$(GO) run .
 
 build:
-	$(GO) build -o binzaar .
+	$(GO) build -o bin/binzaar .
 
 test:
 	$(GO) test ./... -race -cover

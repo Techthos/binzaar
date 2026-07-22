@@ -84,7 +84,7 @@ Environment overrides:
 ## Getting started
 
 ```sh
-make build    # go build ./...
+make build    # go build -o bin/binzaar .
 make run      # go run .
 make test     # go test ./... -race -cover
 make fmt      # gofumpt -w .
