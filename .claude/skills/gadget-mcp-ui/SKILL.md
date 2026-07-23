@@ -52,7 +52,10 @@ Sorting, filtering, pagination, and selection are **client-side** over delivered
    resource (`{type:"resource", resource:{uri, mimeType:"text/html", text: doc}}`). Actions fall
    back automatically to the mcp-ui postMessage protocol when no MCP Apps host answers
    `ui/initialize` — fire-and-forget (`dispatched: true`): the host turns the click into a
-   follow-up turn where the model runs the tool. Therefore point actions/submits at
+   follow-up turn where the model runs the tool. Widget actions dispatch as **prompt-type
+   actions carrying the `\uievent` envelope** (UI Interaction Protocol v1), so protocol-aware
+   hosts render an event chip instead of a fake user message — see reference.md §Embedded
+   per-call mode. Therefore point actions/submits at
    **model-visible** tools and embed the **refreshed dataset's widget** in mutating tools'
    results (there is no rows-refresh round-trip). See reference.md §Embedded per-call mode.
 

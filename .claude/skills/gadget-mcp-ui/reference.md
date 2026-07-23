@@ -388,12 +388,23 @@ template resources or push tool results. Consume gadget differently there:
   mark3labs/mcp-go: `res.Content = append(res.Content, mcp.NewEmbeddedResource(
   mcp.TextResourceContents{URI: uri, MIMEType: "text/html", Text: doc}))`.
 - **Actions fall back automatically** (gadget runtime): until an MCP Apps host is confirmed
-  (`ui/initialize` answered or any host→view method seen), `callTool` posts the mcp-ui message
-  `{type:"tool", messageId, payload:{toolName, params}}` and `openLink` posts
-  `{type:"link", payload:{url}}`. A matching `ui-message-response` becomes the tool result
-  (`payload.error` rejects); otherwise the call resolves fire-and-forget after
-  `uiResponseTimeoutMs` (default 3000 ms) with `dispatched: true` — the table shows the dispatch
-  text as a transient status, the form shows it instead of `SuccessMessage`.
+  (`ui/initialize` answered or any host→view method seen), `callTool` posts a legacy mcp-ui
+  action message and `openLink` posts `{type:"link", payload:{url}}`. A matching
+  `ui-message-response` becomes the tool result (`payload.error` rejects); otherwise the call
+  resolves fire-and-forget after `uiResponseTimeoutMs` (default 3000 ms) with `dispatched: true`
+  — the table shows the dispatch text as a transient status, the form shows it instead of
+  `SuccessMessage`.
+- **The fallback speaks the UI Interaction Protocol v1** (`\uievent` envelope): the built-in
+  widgets pass `UIEventMeta` (`{label, kind}`) to `callTool`, making the dispatch a
+  **prompt-type** action `{type:"prompt", messageId, payload:{prompt}}` whose text is
+  `\uievent{"v":1,"label":…,"kind":…}` on line 1 (label ≤ 80 chars; kind
+  `click`|`submit`|`select`) followed by an instruction naming the tool and its JSON arguments.
+  Protocol-aware hosts (LibreChat with the uievent-chip patch) render an event chip
+  ("You clicked: Install o/app") and feed the instruction to the model; other hosts show the
+  short first line. Labels are composed automatically: row actions `"<action label> <row id>"`
+  (`click`), bulk actions `"<action label> (<n> selected)"` (`select`), form submits the form
+  title or submit label (`submit`). A `callTool` without meta still posts the plain
+  `{type:"tool", messageId, payload:{toolName, params}}` action.
 - **The iframe auto-resizes** (gadget runtime): size reporting starts at first paint (not gated
   on the handshake) and, until a host is confirmed, also posts the mcp-ui
   `{type:"ui-size-change", payload:{height}}` message — auto-resizing hosts grow the iframe so

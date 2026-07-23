@@ -335,6 +335,16 @@ conversation turn in which the model runs the tool; mutating tools therefore emb
 dataset's widget** in their result so the effect is visible (e.g. `install_app` embeds the catalog
 with the `status` badge flipped, `uninstall_app` embeds the remaining installs).
 
+In mcp-ui hosts, widget interactions dispatch as **prompt-type actions carrying the UI Interaction
+Protocol v1 envelope** (gadget runtime): line 1 is the sentinel `\uievent` plus a single-line JSON
+header `{"v":1,"label":…,"kind":…}` (label ≤ 80 chars; kind `click` for row actions, `select` for
+bulk actions, `submit` for form submits), followed by an instruction naming the target tool and
+its JSON arguments. Protocol-aware hosts (LibreChat with the uievent-chip patch) render the
+interaction as an event chip ("You clicked: Install owner/app") while the model receives the
+instruction; hosts without the protocol show the short readable first line. Labels: row actions
+`"<action label> <repo>"`, bulk actions `"<action label> (<n> selected)"`, the config form submit
+uses the form title ("Store configuration").
+
 ### Resources
 
 | URI | Purpose |

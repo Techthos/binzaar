@@ -5,7 +5,10 @@
 // Actions target the normal model-visible tools; in an mcp-ui host the click
 // becomes a follow-up turn where the model runs the tool, and gadget's runtime
 // falls back to the mcp-ui postMessage protocol automatically when no MCP Apps
-// host answers. Hosts that render neither simply ignore the extra content block.
+// host answers — posting each action as a prompt-type message carrying the
+// \uievent envelope (UI Interaction Protocol v1), which protocol-aware hosts
+// render as an event chip ("You clicked: …") instead of a fake user message.
+// Hosts that render neither simply ignore the extra content block.
 package server
 
 import (

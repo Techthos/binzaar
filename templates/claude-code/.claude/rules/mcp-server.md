@@ -98,7 +98,8 @@ version** — a widget built with `github.com/techthos/gadget` — not just a te
 
 Widgets are delivered **embedded per call** (the community mcp-ui convention, rendered by hosts
 like LibreChat; gadget's runtime falls back to the mcp-ui action protocol automatically when no
-MCP Apps host answers):
+MCP Apps host answers, dispatching widget actions as prompt-type actions carrying the `\uievent`
+envelope below):
 
 - Build the widget **per call** with the data baked in (`InitialData`) and a **unique `ui://` URI
   per render**; append the rendered `Document()` to the tool result's `content` as an embedded
@@ -114,6 +115,51 @@ MCP Apps host answers):
   iframe has no native `confirm()`/`alert()`.
 - New or changed widgets and tools are product-surface changes → update `docs/SPECIFICATIONS.md`
   in the **same commit** (`specification-rules.md`).
+
+### UI interaction events — the LibreChat `\uievent` envelope
+
+When widget/iframe HTML posts an interaction back to the chat host as a `prompt`-type mcp-ui
+action (button click, form submit, row select), the prompt text is **not a bare sentence** — it is
+the UI Interaction Protocol v1 envelope, so protocol-aware hosts (our LibreChat deployment) can
+render an event chip ("You clicked: Install deskbluez") instead of a fake user message:
+
+```
+\uievent{"v":1,"label":"Install deskbluez","kind":"click"}
+Install the app "deskbluez" (repo Techthos/deskbluez) using the install_app tool.
+```
+
+- **Line 1** — sentinel `\uievent` immediately followed by single-line JSON: `v` (required,
+  always `1`), `label` (required, human text ≤ 80 chars — this is all a protocol-aware host
+  shows), `kind` (optional: `click` | `submit` | `select`, default `click`).
+- **Line 2+** — the model instruction: natural language that names the target tool and its
+  parameters precisely. Protocol-aware hosts never render it.
+
+Put one shared helper in the iframe HTML template instead of hand-building the string per button:
+
+```js
+function postUIEvent(label, instruction, kind) {
+  window.parent.postMessage({
+    type: 'prompt',
+    payload: {
+      prompt: '\\uievent' + JSON.stringify({ v: 1, label: label, kind: kind || 'click' })
+              + '\n' + instruction,
+    },
+  }, '*');
+}
+```
+
+Conventions:
+
+- `kind: 'submit'` for form submissions (form data belongs in the instruction text, **not** in the
+  header), `kind: 'select'` for selections, everything else `click`.
+- Hosts without the protocol patch render the raw envelope text — the short first line is what
+  keeps that degradation tolerable, so keep labels short and never move instruction detail into
+  the label.
+- Gadget-built widgets emit this envelope automatically in their mcp-ui fallback (labels
+  composed from action label + row id, form title, or selection count — see the
+  `gadget-mcp-ui` skill); wherever **you** supply the prompt text yourself (custom actions,
+  hand-written iframe HTML), it must be this envelope. Do not invent alternative sentinels or
+  headers.
 
 ## Resources
 
@@ -168,3 +214,5 @@ Test handlers through the in-process client (`client.NewInProcessClient(s)`) so 
 7. CRUD tool? Ship its gadget widget UI (per-call embedded Table/Form, actions targeting the
    model-visible tools) via the `gadget-mcp-ui` skill, and update `docs/SPECIFICATIONS.md` in the
    same commit.
+8. Widget posts prompt actions? Every self-authored prompt payload uses the `\uievent` envelope
+   (label + kind header, instruction below).
