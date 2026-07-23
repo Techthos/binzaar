@@ -470,6 +470,184 @@ func TestScaffoldTool(t *testing.T) {
 	}
 }
 
+// --- Interactive UI: gadget widgets embedded per call (mcp-ui convention) ---
+
+// embeddedWidget asserts the result's last content block is an embedded
+// ui://binzaar/<kind>/... text/html resource and returns its document.
+func embeddedWidget(t *testing.T, res *mcp.CallToolResult, kind string) string {
+	t.Helper()
+	if len(res.Content) < 2 {
+		t.Fatalf("result has %d content blocks, want JSON text + embedded widget", len(res.Content))
+	}
+	er, ok := mcp.AsEmbeddedResource(res.Content[len(res.Content)-1])
+	if !ok {
+		t.Fatalf("last content block is not an embedded resource: %T", res.Content[len(res.Content)-1])
+	}
+	tc, ok := er.Resource.(mcp.TextResourceContents)
+	if !ok {
+		t.Fatalf("embedded resource is not text: %T", er.Resource)
+	}
+	prefix := "ui://binzaar/" + kind + "/"
+	if len(tc.URI) <= len(prefix) || tc.URI[:len(prefix)] != prefix {
+		t.Errorf("widget URI = %q, want unique URI under %q", tc.URI, prefix)
+	}
+	if tc.MIMEType != "text/html" {
+		t.Errorf("widget MIME = %q, want text/html", tc.MIMEType)
+	}
+	if tc.Text == "" {
+		t.Fatal("widget document is empty")
+	}
+	return tc.Text
+}
+
+type catalogRowsOut struct {
+	Apps []struct {
+		Repo   string `json:"repo"`
+		Status string `json:"status"`
+	} `json:"apps"`
+}
+
+// TestListCatalogEmbedsWidget locks the embedded-widget contract for the
+// catalog: rows (with their install-status badge value) are baked into a
+// per-call document whose Install action targets the install_app tool.
+func TestListCatalogEmbedsWidget(t *testing.T) {
+	t.Parallel()
+	gh := &fakeGH{catalog: models.Catalog{Apps: []models.ManifestEntry{
+		{Repo: "o/alpha", Category: "tools", DisplayName: "Alpha"},
+	}}}
+	c := newClient(t, gh, "https://manifest")
+
+	res := call(t, c, "list_catalog", nil)
+	out := decode[catalogRowsOut](t, res)
+	if len(out.Apps) != 1 || out.Apps[0].Status != "available" {
+		t.Fatalf("apps = %+v, want one row with status available", out.Apps)
+	}
+	doc := embeddedWidget(t, res, "catalog")
+	for _, want := range []string{"o/alpha", "install_app"} {
+		if !bytes.Contains([]byte(doc), []byte(want)) {
+			t.Errorf("catalog widget document should contain %q", want)
+		}
+	}
+}
+
+// TestInstallEmbedsRefreshedCatalog: a mutating tool embeds the refreshed
+// dataset so the human sees the effect (status flips to installed).
+func TestInstallEmbedsRefreshedCatalog(t *testing.T) {
+	t.Parallel()
+	bin := []byte("the-binary")
+	rel, blobs := verifiedRelease("v1.0.0", bin)
+	gh := &fakeGH{
+		catalog:  models.Catalog{Apps: []models.ManifestEntry{{Repo: "o/app", Category: "tools", DisplayName: "App"}}},
+		releases: []models.Release{rel},
+		blobs:    blobs,
+	}
+	c := newClient(t, gh, "https://manifest")
+
+	res := call(t, c, "install_app", map[string]any{"repo": "o/app"})
+	if res.IsError {
+		t.Fatalf("install errored: %s", resultText(t, res))
+	}
+	embeddedWidget(t, res, "catalog")
+
+	after := decode[catalogRowsOut](t, call(t, c, "list_catalog", nil))
+	if len(after.Apps) != 1 || after.Apps[0].Status != "installed" {
+		t.Errorf("after install: %+v, want status installed", after.Apps)
+	}
+}
+
+func TestUninstallEmbedsInstalledWidget(t *testing.T) {
+	t.Parallel()
+	rel, blobs := verifiedRelease("v1.0.0", []byte("bin"))
+	gh := &fakeGH{releases: []models.Release{rel}, blobs: blobs}
+	c := newClient(t, gh, "https://manifest")
+
+	if res := call(t, c, "install_app", map[string]any{"repo": "o/app"}); res.IsError {
+		t.Fatalf("install: %s", resultText(t, res))
+	}
+	listed := call(t, c, "list_installed", nil)
+	doc := embeddedWidget(t, listed, "installed")
+	for _, want := range []string{"o/app", "update_app", "uninstall_app"} {
+		if !bytes.Contains([]byte(doc), []byte(want)) {
+			t.Errorf("installed widget document should contain %q", want)
+		}
+	}
+
+	res := call(t, c, "uninstall_app", map[string]any{"repo": "o/app"})
+	if res.IsError {
+		t.Fatalf("uninstall errored: %s", resultText(t, res))
+	}
+	embeddedWidget(t, res, "installed")
+	out := decode[struct {
+		Removed bool `json:"removed"`
+	}](t, res)
+	if !out.Removed {
+		t.Error("removed = false, want true")
+	}
+}
+
+func TestListTemplatesEmbedsWidget(t *testing.T) {
+	t.Parallel()
+	gh := &fakeGH{catalog: models.Catalog{Templates: []models.Template{{Repo: "o/t", Ref: "main", Name: "base"}}}}
+	c := newClient(t, gh, "https://manifest")
+	doc := embeddedWidget(t, call(t, c, "list_templates", nil), "templates")
+	if !bytes.Contains([]byte(doc), []byte("o/t")) {
+		t.Error("templates widget document should contain the template repo")
+	}
+}
+
+func TestGetConfigEmbedsForm(t *testing.T) {
+	t.Parallel()
+	c := newClient(t, &fakeGH{}, "https://m/catalog.json")
+	doc := embeddedWidget(t, call(t, c, "get_config", nil), "config")
+	for _, want := range []string{"https://m/catalog.json", "set_config", "manifest_url"} {
+		if !bytes.Contains([]byte(doc), []byte(want)) {
+			t.Errorf("config form document should contain %q", want)
+		}
+	}
+}
+
+func TestSetConfigValidation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		args    map[string]any
+		wantErr string // expected errors key, "" = success
+	}{
+		{name: "invalid manifest URL rejected with field error", args: map[string]any{"manifest_url": "not a url"}, wantErr: "manifest_url"},
+		{name: "non-http scheme rejected with field error", args: map[string]any{"manifest_url": "ftp://host/x.json"}, wantErr: "manifest_url"},
+		{name: "valid URL saves and embeds the form", args: map[string]any{"manifest_url": "https://m/catalog.json"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := newClient(t, &fakeGH{}, "")
+			res := call(t, c, "set_config", tc.args)
+			if tc.wantErr != "" {
+				if !res.IsError {
+					t.Error("invalid input should mark the result as an error")
+				}
+				out := decode[struct {
+					Errors map[string]string `json:"errors"`
+				}](t, res)
+				if out.Errors[tc.wantErr] == "" {
+					t.Errorf("errors = %v, want key %q", out.Errors, tc.wantErr)
+				}
+				return
+			}
+			if res.IsError {
+				t.Fatalf("set_config errored: %s", resultText(t, res))
+			}
+			out := decode[struct {
+				Config models.Config `json:"config"`
+			}](t, res)
+			if out.Config.ManifestURL != tc.args["manifest_url"] {
+				t.Errorf("saved ManifestURL = %q, want %v", out.Config.ManifestURL, tc.args["manifest_url"])
+			}
+			embeddedWidget(t, res, "config")
+		})
+	}
+}
+
 func TestCatalogResource(t *testing.T) {
 	t.Parallel()
 	gh := &fakeGH{catalog: models.Catalog{Apps: []models.ManifestEntry{{Repo: "o/a", Category: "tools"}}}}

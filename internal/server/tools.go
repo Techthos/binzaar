@@ -2,10 +2,25 @@ package server
 
 import (
 	"context"
+	"net/url"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
+
+// validateConfigInput checks set_config's fields; empty fields are valid
+// (MergeConfig leaves them unchanged). Keys match the config form's field
+// names so the widget can render the messages inline.
+func validateConfigInput(in configInput) map[string]string {
+	errs := map[string]string{}
+	if in.ManifestURL != "" {
+		u, err := url.Parse(in.ManifestURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			errs["manifest_url"] = "must be an absolute http(s) URL"
+		}
+	}
+	return errs
+}
 
 // repoArg is the shared "repo" required string parameter.
 func repoArg() mcp.ToolOption {
@@ -18,7 +33,7 @@ func (h *handler) registerTools(s *server.MCPServer) {
 		h.getConfig)
 
 	s.AddTool(mcp.NewTool("set_config",
-		mcp.WithDescription("Update the store configuration. Empty fields are left unchanged."),
+		mcp.WithDescription("Update the store configuration. Empty fields are left unchanged; a non-empty manifest_url must be an absolute http(s) URL."),
 		mcp.WithString("manifest_url", mcp.Description("Raw JSON URL of the catalog manifest")),
 		mcp.WithString("install_dir", mcp.Description("Directory where installed binaries are placed"))),
 		mcp.NewTypedToolHandler(h.setConfig))
@@ -94,23 +109,43 @@ func (h *handler) getConfig(_ context.Context, _ mcp.CallToolRequest) (*mcp.Call
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(configOutput{Config: cfg})
+	res, err := mcp.NewToolResultJSON(configOutput{Config: cfg})
+	if err != nil {
+		return nil, err
+	}
+	w, werr := configWidget(cfg)
+	return embedUI(res, w, werr), nil
 }
 
 func (h *handler) setConfig(_ context.Context, _ mcp.CallToolRequest, in configInput) (*mcp.CallToolResult, error) {
+	if errs := validateConfigInput(in); len(errs) > 0 {
+		// Field-level errors: the config form renders them inline (under the
+		// "errors" key), and IsError tells the model the update was rejected.
+		res, err := mcp.NewToolResultJSON(configErrorsOutput{Errors: errs})
+		if err != nil {
+			return nil, err
+		}
+		res.IsError = true
+		return res, nil
+	}
 	cfg, err := h.app.MergeConfig(in.ManifestURL, in.InstallDir)
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(configOutput{Config: cfg})
+	res, err := mcp.NewToolResultJSON(configOutput{Config: cfg})
+	if err != nil {
+		return nil, err
+	}
+	w, werr := configWidget(cfg)
+	return embedUI(res, w, werr), nil
 }
 
 func (h *handler) listCatalog(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	apps, err := h.app.ListCatalog(ctx)
+	rows, err := h.catalogRows(ctx)
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(catalogOutput{Apps: nz(apps)})
+	return h.catalogResult(rows)
 }
 
 func (h *handler) searchApps(ctx context.Context, _ mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, error) {
@@ -118,7 +153,36 @@ func (h *handler) searchApps(ctx context.Context, _ mcp.CallToolRequest, in sear
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(catalogOutput{Apps: nz(apps)})
+	rows, err := h.decorateApps(apps)
+	if err != nil {
+		return toolErr(err)
+	}
+	return h.catalogResult(rows)
+}
+
+// catalogResult builds the catalog JSON result with the table widget embedded.
+func (h *handler) catalogResult(rows []catalogRow) (*mcp.CallToolResult, error) {
+	res, err := mcp.NewToolResultJSON(catalogOutput{Apps: rows})
+	if err != nil {
+		return nil, err
+	}
+	w, werr := catalogWidget(rows)
+	return embedUI(res, w, werr), nil
+}
+
+// installedResult builds an installed-list JSON result with the table widget
+// embedded, from the current tracked installs.
+func (h *handler) installedResult(v any) (*mcp.CallToolResult, error) {
+	res, err := mcp.NewToolResultJSON(v)
+	if err != nil {
+		return nil, err
+	}
+	list, lerr := h.app.ListInstalled()
+	if lerr != nil {
+		return nil, lerr
+	}
+	w, werr := installedWidget(nz(list))
+	return embedUI(res, w, werr), nil
 }
 
 func (h *handler) appDetails(ctx context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
@@ -142,7 +206,7 @@ func (h *handler) listInstalled(_ context.Context, _ mcp.CallToolRequest) (*mcp.
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(installedListOutput{Installed: nz(list)})
+	return h.installedResult(installedListOutput{Installed: nz(list)})
 }
 
 func (h *handler) installApp(ctx context.Context, _ mcp.CallToolRequest, in installInput) (*mcp.CallToolResult, error) {
@@ -150,7 +214,17 @@ func (h *handler) installApp(ctx context.Context, _ mcp.CallToolRequest, in inst
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(installOutput{Installed: rec})
+	res, err := mcp.NewToolResultJSON(installOutput{Installed: rec})
+	if err != nil {
+		return nil, err
+	}
+	// Embed the refreshed catalog so the status badge reflects the install.
+	rows, rerr := h.catalogRows(ctx)
+	if rerr != nil {
+		return res, nil // install succeeded; the widget is optional
+	}
+	w, werr := catalogWidget(rows)
+	return embedUI(res, w, werr), nil
 }
 
 func (h *handler) updateApp(ctx context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
@@ -158,14 +232,14 @@ func (h *handler) updateApp(ctx context.Context, _ mcp.CallToolRequest, in repoI
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(res)
+	return h.installedResult(res)
 }
 
 func (h *handler) uninstallApp(_ context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
 	if err := h.app.Uninstall(in.Repo); err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(removedOutput{Removed: true})
+	return h.installedResult(removedOutput{Removed: true})
 }
 
 func (h *handler) verifyApp(_ context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
@@ -189,7 +263,12 @@ func (h *handler) listTemplates(ctx context.Context, _ mcp.CallToolRequest) (*mc
 	if err != nil {
 		return toolErr(err)
 	}
-	return mcp.NewToolResultJSON(templatesOutput{Templates: nz(tmpls)})
+	res, err := mcp.NewToolResultJSON(templatesOutput{Templates: nz(tmpls)})
+	if err != nil {
+		return nil, err
+	}
+	w, werr := templatesWidget(nz(tmpls))
+	return embedUI(res, w, werr), nil
 }
 
 func (h *handler) scaffoldApp(ctx context.Context, _ mcp.CallToolRequest, in scaffoldInput) (*mcp.CallToolResult, error) {

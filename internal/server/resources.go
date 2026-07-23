@@ -27,11 +27,11 @@ func (h *handler) registerResources(s *server.MCPServer) {
 }
 
 func (h *handler) catalogResource(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
-	apps, err := h.app.ListCatalog(ctx)
+	rows, err := h.catalogRows(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return jsonResource(req.Params.URI, catalogOutput{Apps: nz(apps)})
+	return jsonResource(req.Params.URI, catalogOutput{Apps: rows})
 }
 
 func (h *handler) installedResource(_ context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {

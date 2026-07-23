@@ -8,7 +8,7 @@ run:
 	$(GO) run .
 
 build:
-	$(GO) build -o bin/binzaar .
+	CGO_ENABLED=0 $(GO) build -o bin/binzaar .
 
 test:
 	$(GO) test ./... -race -cover

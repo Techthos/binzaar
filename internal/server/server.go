@@ -4,9 +4,15 @@
 // resource delegates to the internal/app use-case layer. User/input failures are
 // returned as tool error results (nil error); only unexpected failures bubble up
 // as protocol errors.
+//
+// CRUD tool results additionally carry an interactive gadget widget as a
+// per-call embedded ui:// HTML resource (community mcp-ui convention — see
+// widgets.go); hosts that don't render it ignore the extra content block.
 package server
 
 import (
+	"context"
+
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"techthos.net/binzaar/internal/app"
@@ -65,8 +71,16 @@ type configureMCPInput struct {
 
 // --- tool outputs ---
 
+// catalogRow is a ManifestEntry decorated with install state — the catalog
+// table widget renders it as the "status" badge, and the model can read it to
+// know what is already installed.
+type catalogRow struct {
+	models.ManifestEntry
+	Status string `json:"status"` // "installed" | "available"
+}
+
 type catalogOutput struct {
-	Apps []models.ManifestEntry `json:"apps"`
+	Apps []catalogRow `json:"apps"`
 }
 
 type releasesOutput struct {
@@ -106,6 +120,12 @@ type configOutput struct {
 	Config models.Config `json:"config"`
 }
 
+// configErrorsOutput carries field-level validation errors for the config form
+// widget (rendered inline under the offending fields).
+type configErrorsOutput struct {
+	Errors map[string]string `json:"errors"`
+}
+
 // toolErr surfaces a use-case error to the model as a tool error result so it can
 // react (set the manifest URL, pick another asset, etc.).
 func toolErr(err error) (*mcp.CallToolResult, error) {
@@ -118,4 +138,35 @@ func nz[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+// decorateApps joins catalog entries with the tracked installs so each row
+// carries its install status.
+func (h *handler) decorateApps(apps []models.ManifestEntry) ([]catalogRow, error) {
+	installed, err := h.app.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+	have := make(map[string]struct{}, len(installed))
+	for _, ia := range installed {
+		have[ia.Repo] = struct{}{}
+	}
+	rows := make([]catalogRow, 0, len(apps))
+	for _, e := range apps {
+		status := "available"
+		if _, ok := have[e.Repo]; ok {
+			status = "installed"
+		}
+		rows = append(rows, catalogRow{ManifestEntry: e, Status: status})
+	}
+	return rows, nil
+}
+
+// catalogRows fetches the live catalog decorated with install status.
+func (h *handler) catalogRows(ctx context.Context) ([]catalogRow, error) {
+	apps, err := h.app.ListCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return h.decorateApps(apps)
 }

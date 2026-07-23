@@ -292,8 +292,8 @@ Non-trivial inputs use typed handlers with `jsonschema`-tagged structs. **All lo
 |---|---|---|---|
 | `get_config` | Read store config (UC 1) | — | `{ config: Config }` |
 | `set_config` | Update store config; empty fields unchanged; TUI view-prefs untouched (UC 1) | `{ manifest_url?: string, install_dir?: string }` | `{ config: Config }` |
-| `list_catalog` | List catalog app entries (UC 2) | — | `{ apps: ManifestEntry[] }` |
-| `search_apps` | Filter catalog (UC 3) | `{ query?: string, category?: string }` | `{ apps: ManifestEntry[] }` |
+| `list_catalog` | List catalog app entries (UC 2) | — | `{ apps: CatalogRow[] }` |
+| `search_apps` | Filter catalog (UC 3) | `{ query?: string, category?: string }` | `{ apps: CatalogRow[] }` |
 | `app_details` | Repo info + latest release + assets + install state (UC 4) | `{ repo: string }` | `{ repo: RepoInfo, latest: Release, installed?: InstalledApp }` |
 | `list_releases` | All releases for a repo (UC 5) | `{ repo: string }` | `{ releases: Release[] }` |
 | `list_installed` | Tracked installs (UC 7) | — | `{ installed: InstalledApp[] }` |
@@ -305,11 +305,41 @@ Non-trivial inputs use typed handlers with `jsonschema`-tagged structs. **All lo
 | `list_templates` | Manifest templates (UC 11) | — | `{ templates: Template[] }` |
 | `scaffold_app` | Extract template + hand off (UC 12) | `{ template_repo: string, target_dir: string, ref?: string, force?: bool }` | `{ target_dir: string, files: int, next_step: string }` (instructs caller to run `/product-idea`) |
 
+`CatalogRow` is a `ManifestEntry` plus `status: "installed" | "available"` — the catalog entries
+joined with the tracked installs, so both the model and the catalog widget (below) see install state.
+
+A non-empty `manifest_url` passed to `set_config` must be an absolute http(s) URL; otherwise the
+tool returns an **error result** whose JSON is `{ errors: { manifest_url: string } }` — keyed by
+field name so the config form (below) renders the message inline.
+
+### Interactive UI (embedded gadget widgets)
+
+CRUD tool results additionally carry an **interactive widget** built with
+`github.com/techthos/gadget`, following the community **mcp-ui** convention (rendered by hosts such
+as LibreChat in a sandboxed iframe): the result's `content` gets one extra embedded-resource block
+`{ type: "resource", resource: { uri, mimeType: "text/html", text: <document> } }`. Each render is a
+**self-contained per-call document** — the call's data is baked in, and the `ui://binzaar/<kind>/<n>`
+URI is unique per render. Hosts that don't render embedded UI resources ignore the extra block; the
+JSON text + `structuredContent` always stand alone. Widget build/render failures never fail the
+tool (logged to stderr only).
+
+| Widget (URI prefix) | Kind | Embedded on | Actions (target tool) |
+|---|---|---|---|
+| `ui://binzaar/catalog/…` | Table (filterable, paginated, `status` badge) | `list_catalog`, `search_apps`, `install_app` (refreshed) | per-row **Install** → `install_app` |
+| `ui://binzaar/installed/…` | Table (filterable) | `list_installed`, `update_app` (refreshed), `uninstall_app` (refreshed) | per-row **Update** → `update_app`; **Uninstall** → `uninstall_app` (inline two-phase confirm — no native `confirm()` in sandboxed iframes) |
+| `ui://binzaar/templates/…` | Table | `list_templates` | — |
+| `ui://binzaar/config/…` | Form (prefilled with current values) | `get_config`, `set_config` (refreshed) | submit → `set_config`; field errors render inline from `errors` |
+
+Actions target the **normal model-visible tools** — in an mcp-ui host a click becomes a follow-up
+conversation turn in which the model runs the tool; mutating tools therefore embed the **refreshed
+dataset's widget** in their result so the effect is visible (e.g. `install_app` embeds the catalog
+with the `status` badge flipped, `uninstall_app` embeds the remaining installs).
+
 ### Resources
 
 | URI | Purpose |
 |---|---|
-| `catalog://list` | The current catalog app entries (live) |
+| `catalog://list` | The current catalog app entries joined with install state (live; `{ apps: CatalogRow[] }`) |
 | `installed://list` | The tracked installs (from bbolt) |
 | `templates://list` | The manifest's templates (live) |
 
