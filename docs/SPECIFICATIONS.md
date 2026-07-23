@@ -315,13 +315,17 @@ field name so the config form (below) renders the message inline.
 ### Interactive UI (embedded gadget widgets)
 
 CRUD tool results additionally carry an **interactive widget** built with
-`github.com/techthos/gadget`, following the community **mcp-ui** convention (rendered by hosts such
-as LibreChat in a sandboxed iframe): the result's `content` gets one extra embedded-resource block
-`{ type: "resource", resource: { uri, mimeType: "text/html", text: <document> } }`. Each render is a
-**self-contained per-call document** — the call's data is baked in, and the `ui://binzaar/<kind>/<n>`
-URI is unique per render. Hosts that don't render embedded UI resources ignore the extra block; the
-JSON text + `structuredContent` always stand alone. Widget build/render failures never fail the
-tool (logged to stderr only).
+`github.com/techthos/gadget`, rendered by an **MCP Apps** host in a sandboxed iframe: the
+result's `content` gets one extra embedded-resource block
+`{ type: "resource", resource: { uri, mimeType: "text/html;profile=mcp-app", text: <document> } }`.
+The `profile=mcp-app` mimeType is the **MCP Apps HTML profile**: an MCP Apps host (via
+`@modelcontextprotocol/ext-apps`) recognizes it and attaches the standard App Bridge to the iframe,
+so widget actions execute as bridge tool calls the host runs directly against this binzaar server
+(see below). Each render is a **self-contained per-call document** — the call's data is baked in,
+and the
+`ui://binzaar/<kind>/<n>` URI is unique per render. Hosts that don't render embedded UI resources
+ignore the extra block; the JSON text + `structuredContent` always stand alone. Widget build/render
+failures never fail the tool (logged to stderr only).
 
 | Widget (URI prefix) | Kind | Embedded on | Actions (target tool) |
 |---|---|---|---|
@@ -330,20 +334,14 @@ tool (logged to stderr only).
 | `ui://binzaar/templates/…` | Table | `list_templates` | — |
 | `ui://binzaar/config/…` | Form (prefilled with current values) | `get_config`, `set_config` (refreshed) | submit → `set_config`; field errors render inline from `errors` |
 
-Actions target the **normal model-visible tools** — in an mcp-ui host a click becomes a follow-up
-conversation turn in which the model runs the tool; mutating tools therefore embed the **refreshed
-dataset's widget** in their result so the effect is visible (e.g. `install_app` embeds the catalog
-with the `status` badge flipped, `uninstall_app` embeds the remaining installs).
-
-In mcp-ui hosts, widget interactions dispatch as **prompt-type actions carrying the UI Interaction
-Protocol v1 envelope** (gadget runtime): line 1 is the sentinel `\uievent` plus a single-line JSON
-header `{"v":1,"label":…,"kind":…}` (label ≤ 80 chars; kind `click` for row actions, `select` for
-bulk actions, `submit` for form submits), followed by an instruction naming the target tool and
-its JSON arguments. Protocol-aware hosts (LibreChat with the uievent-chip patch) render the
-interaction as an event chip ("You clicked: Install owner/app") while the model receives the
-instruction; hosts without the protocol show the short readable first line. Labels: row actions
-`"<action label> <repo>"`, bulk actions `"<action label> (<n> selected)"`, the config form submit
-uses the form title ("Store configuration").
+Actions target the **normal tools** of the same server, and flow back through the standard **MCP
+Apps App Bridge** as JSON-RPC over `postMessage`: a widget click/submit dispatches a bridge
+`tools/call` that the host executes directly against this binzaar server and returns the tool result
+straight to the widget (links use `ui/open-link`; the iframe height is applied via
+`ui/notifications/size-changed`). Because every mutating tool embeds the **refreshed dataset's
+widget** in its result (e.g. `install_app` embeds the catalog with the `status` badge flipped,
+`uninstall_app` embeds the remaining installs), the widget updates in place from that returned
+result. See [mcp-apps-host-guide.md](mcp-apps-host-guide.md) for the full host contract.
 
 ### Resources
 

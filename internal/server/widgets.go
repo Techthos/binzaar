@@ -1,14 +1,11 @@
-// Interactive UI: gadget-built widgets embedded per call in tool results,
-// following the community mcp-ui convention rendered by hosts like LibreChat —
-// each result carries a self-contained HTML document as an embedded ui://
-// resource with a unique URI and the call's data baked in (InitialData).
-// Actions target the normal model-visible tools; in an mcp-ui host the click
-// becomes a follow-up turn where the model runs the tool, and gadget's runtime
-// falls back to the mcp-ui postMessage protocol automatically when no MCP Apps
-// host answers — posting each action as a prompt-type message carrying the
-// \uievent envelope (UI Interaction Protocol v1), which protocol-aware hosts
-// render as an event chip ("You clicked: …") instead of a fake user message.
-// Hosts that render neither simply ignore the extra content block.
+// Interactive UI: gadget-built widgets embedded per call in tool results
+// (MCP Apps, result-embedded) — each result carries a self-contained HTML
+// document as an embedded ui:// resource with a unique URI, the call's data
+// baked in (InitialData), and the MCP Apps profile mimeType so the host
+// attaches the standard bridge (ui/initialize handshake, tools/call for
+// actions, ui/notifications/size-changed for height). The UI is progressive
+// enhancement: the JSON result stands alone, and hosts that do not render
+// MCP Apps simply ignore the extra content block.
 package server
 
 import (
@@ -21,7 +18,7 @@ import (
 	"techthos.net/binzaar/internal/models"
 )
 
-// uiURI returns a fresh widget URI — mcp-ui hosts key renders by URI, so every
+// uiURI returns a fresh widget URI — hosts key renders by URI, so every
 // render must be unique.
 func uiURI(kind string) string {
 	return fmt.Sprintf("ui://binzaar/%s/%d", kind, time.Now().UnixNano())
@@ -43,7 +40,7 @@ func embedUI(res *mcp.CallToolResult, w gadget.Widget, err error) *mcp.CallToolR
 	}
 	res.Content = append(res.Content, mcp.NewEmbeddedResource(mcp.TextResourceContents{
 		URI:      w.Descriptor().URI,
-		MIMEType: "text/html",
+		MIMEType: "text/html;profile=mcp-app",
 		Text:     doc,
 	}))
 	return res

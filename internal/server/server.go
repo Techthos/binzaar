@@ -6,7 +6,7 @@
 // as protocol errors.
 //
 // CRUD tool results additionally carry an interactive gadget widget as a
-// per-call embedded ui:// HTML resource (community mcp-ui convention — see
+// per-call embedded ui:// HTML resource carrying the MCP Apps HTML profile (see
 // widgets.go); hosts that don't render it ignore the extra content block.
 package server
 

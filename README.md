@@ -119,6 +119,11 @@ startup, re-reads it on every request (edits show up without a restart), and nee
 database nor GitHub. To run it in a container, see
 [docs/serve-registry-docker-compose.md](docs/serve-registry-docker-compose.md).
 
+In `mcp` mode, CRUD tool results also embed interactive HTML widgets following the **MCP Apps**
+extension (`io.modelcontextprotocol/ui`) — as do all micro-apps built from this template. How a
+chat host should render these widgets and route their interactions back through the standard App
+Bridge is documented in [docs/mcp-apps-host-guide.md](docs/mcp-apps-host-guide.md).
+
 ## Configuration
 
 - `BINZAAR_GITHUB_TOKEN` — optional GitHub token; raises rate limits and enables private repos.
