@@ -137,10 +137,6 @@ type configInput struct {
 	InstallDir  string `json:"install_dir"`
 }
 
-type configOutput struct {
-	Config models.Config `json:"config"`
-}
-
 // configFormOutput carries the saved config plus its field values under
 // "values" — the config form's prefillKey — so a successful set_config
 // refreshes the live form's fields in place.

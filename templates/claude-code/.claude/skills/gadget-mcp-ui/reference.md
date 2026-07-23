@@ -65,6 +65,8 @@ type Table struct {
     Empty       EmptyState
 
     InitialData map[string]any         // optional structuredContent-shaped snapshot baked into the document
+    LoadTool    string                 // read tool the runtime calls once on load to re-fetch rows under RowsKey, replacing the baked snapshot (a reloaded widget shows current data, not the render-time snapshot)
+    LoadArgs    map[string]any         // optional static args passed to LoadTool
     Theme       *theme.Theme
     UI          *uispec.ResourceUIMeta // overrides resource _meta.ui (CSP, permissions, prefersBorder)
 }
@@ -133,6 +135,8 @@ type Form struct {
     ErrorsKey  string  // structuredContent key with {"field": "message"} errors. Default "errors"
 
     InitialData map[string]any // e.g. {"values": {...}} for a pre-filled edit form
+    LoadTool    string         // read tool the runtime calls once on load to re-fetch prefill under PrefillKey, replacing the baked snapshot
+    LoadArgs    map[string]any // optional static args passed to LoadTool
     Theme       *theme.Theme
     UI          *uispec.ResourceUIMeta
 }
@@ -385,6 +389,10 @@ what this template's binzaar server uses; interactions still flow through the st
 - Build the widget **per call**: bake the call's data via `InitialData` (the runtime paints it at
   first render, before any host handshake) and give every render a **unique URI**
   (e.g. `ui://app/kind/<unixnano>` — hosts key renders by URI).
+- **Set `LoadTool` so a reloaded snapshot re-hydrates.** The baked `InitialData` is frozen at render
+  time; if the host reloads or remounts the iframe the widget would repaint that stale snapshot. Give
+  each widget a `LoadTool` (a read tool returning the data under the widget's `RowsKey`/`PrefillKey`)
+  and the runtime calls it once after the handshake to replace the snapshot with current data.
 - Append the rendered `Document()` to the tool result's `content` **after** the JSON text block, as
   an embedded resource carrying the **MCP Apps HTML profile** `mimeType: "text/html;profile=mcp-app"`.
   With mark3labs/mcp-go: `res.Content = append(res.Content, mcp.NewEmbeddedResource(

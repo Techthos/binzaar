@@ -60,6 +60,9 @@ func catalogWidget(rows []catalogRow) (gadget.Widget, error) {
 		Filterable:  true,
 		PageSize:    10,
 		InitialData: map[string]any{"apps": data},
+		// Re-fetch on load so a reloaded snapshot shows the current catalog
+		// (with up-to-date install badges) instead of the render-time state.
+		LoadTool: "list_catalog",
 		Columns: []gadget.Column{
 			gadget.Text("display_name", "Name"),
 			gadget.Text("repo", "Repository"),
@@ -93,6 +96,9 @@ func installedWidget(installed []models.InstalledApp) (gadget.Widget, error) {
 		RowID:       "repo",
 		Filterable:  true,
 		InitialData: map[string]any{"installed": data},
+		// Re-fetch on load so a reloaded snapshot reflects the current
+		// installs (updates/uninstalls applied) instead of render-time state.
+		LoadTool: "list_installed",
 		Columns: []gadget.Column{
 			gadget.Text("repo", "Repository"),
 			gadget.Text("version", "Version"),
@@ -130,6 +136,8 @@ func templatesWidget(templates []models.Template) (gadget.Widget, error) {
 		RowsKey:     "templates", // matches templatesOutput's JSON key
 		RowID:       "repo",
 		InitialData: map[string]any{"templates": data},
+		LoadTool:    "list_templates", // re-fetch on load, matching the other tables
+
 		Columns: []gadget.Column{
 			gadget.Text("name", "Name"),
 			gadget.Text("repo", "Repository"),
@@ -150,6 +158,9 @@ func configWidget(cfg models.Config) (gadget.Widget, error) {
 			"manifest_url": cfg.ManifestURL,
 			"install_dir":  cfg.InstallDir,
 		}},
+		// Re-fetch on load so a reloaded form shows the current stored config
+		// (get_config returns the fields under the "values" prefill key).
+		LoadTool: "get_config",
 		Fields: []gadget.Field{
 			{
 				Name:        "manifest_url",

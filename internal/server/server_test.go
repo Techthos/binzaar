@@ -231,9 +231,17 @@ func TestConfigTools(t *testing.T) {
 
 	got := decode[struct {
 		Config models.Config `json:"config"`
+		Values struct {
+			ManifestURL string `json:"manifest_url"`
+		} `json:"values"`
 	}](t, call(t, c, "get_config", nil))
 	if got.Config.ManifestURL != "https://m/catalog.json" {
 		t.Errorf("get_config ManifestURL = %q, want persisted value", got.Config.ManifestURL)
+	}
+	// get_config also surfaces the fields under "values" (the config form's
+	// prefillKey) so the embedded form hydrates in place when it loads.
+	if got.Values.ManifestURL != "https://m/catalog.json" {
+		t.Errorf("get_config values.manifest_url = %q, want the form prefill value", got.Values.ManifestURL)
 	}
 }
 
@@ -620,7 +628,9 @@ func TestGetConfigEmbedsForm(t *testing.T) {
 	t.Parallel()
 	c := newClient(t, &fakeGH{}, "https://m/catalog.json")
 	doc := embeddedWidget(t, call(t, c, "get_config", nil), "config")
-	for _, want := range []string{"https://m/catalog.json", "set_config", "manifest_url"} {
+	// "get_config" is the form's LoadTool: the embedded document carries it so
+	// a reloaded form re-fetches current values instead of the baked snapshot.
+	for _, want := range []string{"https://m/catalog.json", "set_config", "manifest_url", "get_config"} {
 		if !bytes.Contains([]byte(doc), []byte(want)) {
 			t.Errorf("config form document should contain %q", want)
 		}

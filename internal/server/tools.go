@@ -111,7 +111,12 @@ func (h *handler) getConfig(_ context.Context, _ mcp.CallToolRequest) (*mcp.Call
 	if err != nil {
 		return toolErr(err)
 	}
-	res := mcp.NewToolResultStructured(configOutput{Config: cfg}, "Store configuration.")
+	// Return the fields under "values" (the config form's prefillKey) as well
+	// as "config", so the form hydrates in place when it loads via get_config.
+	res := mcp.NewToolResultStructured(
+		configFormOutput{Config: cfg, Values: configValues{ManifestURL: cfg.ManifestURL, InstallDir: cfg.InstallDir}},
+		"Store configuration.",
+	)
 	w, werr := configWidget(cfg)
 	return embedUI(res, w, werr), nil
 }

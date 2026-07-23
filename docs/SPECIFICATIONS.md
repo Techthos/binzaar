@@ -290,7 +290,7 @@ Non-trivial inputs use typed handlers with `jsonschema`-tagged structs. **All lo
 
 | Tool | Purpose (UC) | Input | Output |
 |---|---|---|---|
-| `get_config` | Read store config (UC 1) | — | `{ config: Config }` |
+| `get_config` | Read store config (UC 1) | — | `{ config: Config, values: { manifest_url, install_dir } }` (`values` is the config form's `prefillKey` — it is also the form's `LoadTool`, so a reloaded form re-hydrates from it) |
 | `set_config` | Update store config; empty fields unchanged; TUI view-prefs untouched (UC 1) | `{ manifest_url?: string, install_dir?: string }` | `{ config: Config, values: { manifest_url, install_dir } }` (`values` is the config form's `prefillKey`, so a live form refreshes in place) |
 | `list_catalog` | List catalog app entries (UC 2) | — | `{ apps: CatalogRow[] }` |
 | `search_apps` | Filter catalog (UC 3) | `{ query?: string, category?: string }` | `{ apps: CatalogRow[] }` |
@@ -354,6 +354,16 @@ block** of a mutating result is a short status line (for example `Installed owne
 JSON; the machine data always stands alone in `structuredContent`. Each mutating result **also**
 embeds a freshly rendered widget (new `ui://` URI) for hosts that render result widgets rather than
 patching in place. See [mcp-apps-host-guide.md](mcp-apps-host-guide.md) for the full host contract.
+
+Because each embedded document bakes its data in at render time, a widget the host later **reloads or
+remounts** (a new turn, a message-list re-render) would otherwise repaint that frozen snapshot and
+lose the in-place refresh. To prevent this every interactive widget declares a **`LoadTool`** — a
+read tool the gadget runtime calls once on load, after the App Bridge handshake, to re-fetch current
+data and replace the baked snapshot: the catalog table loads `list_catalog`, the installed table
+`list_installed`, the templates table `list_templates`, and the config form `get_config`. A reloaded
+widget therefore shows current state, not the state frozen when it was first rendered. For the config
+form to hydrate this way, `get_config` returns the fields under `values` (the form's `prefillKey`) in
+addition to `config`.
 
 ### Resources
 

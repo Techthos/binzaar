@@ -130,6 +130,15 @@ methods below.
   our code nor left as a frozen snapshot, and it never re-posts a prompt. Also embed a freshly
   rendered widget in the result as a fallback for hosts that render result widgets rather than
   patching in place.
+- **Set a `LoadTool` on every embedded per-call widget so a reloaded snapshot re-hydrates.** The
+  baked `InitialData` is frozen at render time; if the host reloads or remounts the iframe (a new
+  turn, a message-list re-render) the widget repaints that stale snapshot and the in-place refresh is
+  lost. A widget's `LoadTool` is a read tool the gadget runtime calls once on load (after the App
+  Bridge handshake) to re-fetch current data and replace the baked snapshot — the catalog table loads
+  `list_catalog`, the installed table `list_installed`, the config form `get_config`. The load tool
+  must return its data under the widget's key: a table's `rowsKey` (a plain list tool already fits), a
+  form's `prefillKey` (so the form's read tool must return that key — e.g. `get_config` returns
+  `values`, not only `config`).
 - **Mutating results carry a human status line as the text block, not raw JSON.** The gadget runtime
   shows a table/form's first text content block as its status banner, so build mutating results with
   `mcp.NewToolResultStructured(payload, "Installed owner/name v1.2.3")`: `payload` (carrying the

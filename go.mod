@@ -6,7 +6,7 @@ require (
 	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/mark3labs/mcp-go v0.54.1
 	github.com/rivo/tview v0.42.0
-	github.com/techthos/gadget v0.2.0
+	github.com/techthos/gadget v0.3.0
 	go.etcd.io/bbolt v1.4.2
 )
 
