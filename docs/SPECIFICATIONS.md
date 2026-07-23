@@ -291,15 +291,15 @@ Non-trivial inputs use typed handlers with `jsonschema`-tagged structs. **All lo
 | Tool | Purpose (UC) | Input | Output |
 |---|---|---|---|
 | `get_config` | Read store config (UC 1) | — | `{ config: Config }` |
-| `set_config` | Update store config; empty fields unchanged; TUI view-prefs untouched (UC 1) | `{ manifest_url?: string, install_dir?: string }` | `{ config: Config }` |
+| `set_config` | Update store config; empty fields unchanged; TUI view-prefs untouched (UC 1) | `{ manifest_url?: string, install_dir?: string }` | `{ config: Config, values: { manifest_url, install_dir } }` (`values` is the config form's `prefillKey`, so a live form refreshes in place) |
 | `list_catalog` | List catalog app entries (UC 2) | — | `{ apps: CatalogRow[] }` |
 | `search_apps` | Filter catalog (UC 3) | `{ query?: string, category?: string }` | `{ apps: CatalogRow[] }` |
 | `app_details` | Repo info + latest release + assets + install state (UC 4) | `{ repo: string }` | `{ repo: RepoInfo, latest: Release, installed?: InstalledApp }` |
 | `list_releases` | All releases for a repo (UC 5) | `{ repo: string }` | `{ releases: Release[] }` |
 | `list_installed` | Tracked installs (UC 7) | — | `{ installed: InstalledApp[] }` |
-| `install_app` | Match arch, verify, download, record (UC 6) | `{ repo: string, version?: string, asset?: string, allow_unverified?: bool }` | `{ installed: InstalledApp }`; on no/ambiguous match → error result listing assets |
-| `update_app` | Upgrade to latest (UC 8) | `{ repo: string }` | `{ installed: InstalledApp, updated: bool, from: string, to: string }` |
-| `uninstall_app` | Remove binary + record (UC 9) | `{ repo: string }` | `{ removed: bool }` |
+| `install_app` | Match arch, verify, download, record (UC 6) | `{ repo: string, version?: string, asset?: string, allow_unverified?: bool }` | `{ installed: InstalledApp, apps: CatalogRow[] }` (`apps` is the catalog table's `rowsKey`, the refreshed catalog so a live widget patches in place); on no/ambiguous match → error result listing assets |
+| `update_app` | Upgrade to latest (UC 8) | `{ repo: string }` | `{ installed: InstalledApp[], updated: bool, from: string, to: string, repo: string }` (`installed` is the refreshed install list, the installed table's `rowsKey`; the updated app is the entry named by `repo`) |
+| `uninstall_app` | Remove binary + record (UC 9) | `{ repo: string }` | `{ installed: InstalledApp[], removed: bool, repo: string }` (`installed` is the refreshed install list, the installed table's `rowsKey`) |
 | `verify_app` | Re-check SHA-256 (UC 10) | `{ repo: string }` | `{ status: "ok"\|"mismatch"\|"missing" }` |
 | `configure_mcp` | Add an install's MCP server to a project's `.mcp.json` (UC 14) | `{ repo: string, dir?: string }` | `{ result: { path: string, server: string, created: bool, updated: bool } }`; no-MCP app → error result |
 | `list_templates` | Manifest templates (UC 11) | — | `{ templates: Template[] }` |
@@ -324,8 +324,11 @@ so widget actions execute as bridge tool calls the host runs directly against th
 (see below). Each render is a **self-contained per-call document** — the call's data is baked in,
 and the
 `ui://binzaar/<kind>/<n>` URI is unique per render. Hosts that don't render embedded UI resources
-ignore the extra block; the JSON text + `structuredContent` always stand alone. Widget build/render
-failures never fail the tool (logged to stderr only).
+ignore the extra block. The text content block is a **short human status line** (for example
+`5 apps installed.`), never raw JSON: a JSON text block flashes visibly in an MCP Apps host before
+the widget paints over it. The machine data always stands alone in `structuredContent` (under the
+widget's key), which is what the model reads. Widget build/render failures never fail the tool
+(logged to stderr only).
 
 | Widget (URI prefix) | Kind | Embedded on | Actions (target tool) |
 |---|---|---|---|
@@ -338,10 +341,19 @@ Actions target the **normal tools** of the same server, and flow back through th
 Apps App Bridge** as JSON-RPC over `postMessage`: a widget click/submit dispatches a bridge
 `tools/call` that the host executes directly against this binzaar server and returns the tool result
 straight to the widget (links use `ui/open-link`; the iframe height is applied via
-`ui/notifications/size-changed`). Because every mutating tool embeds the **refreshed dataset's
-widget** in its result (e.g. `install_app` embeds the catalog with the `status` badge flipped,
-`uninstall_app` embeds the remaining installs), the widget updates in place from that returned
-result. See [mcp-apps-host-guide.md](mcp-apps-host-guide.md) for the full host contract.
+`ui/notifications/size-changed`).
+
+A live widget refreshes **in place** from the tool result it fired, with no host re-render required:
+the gadget runtime patches the visible table's rows (or the form's fields) whenever the result's
+`structuredContent` carries that widget's key. So every mutating tool returns the **refreshed
+collection under the widget's key**: `install_app` returns the refreshed catalog under `apps` (the
+catalog table's `rowsKey`, with the `status` badge flipped), `update_app` and `uninstall_app` return
+the refreshed installs under `installed` (the installed table's `rowsKey`), and `set_config` returns
+the saved fields under `values` (the config form's `prefillKey`). The human-readable **text content
+block** of a mutating result is a short status line (for example `Installed owner/name v1.2.3`), not
+JSON; the machine data always stands alone in `structuredContent`. Each mutating result **also**
+embeds a freshly rendered widget (new `ui://` URI) for hosts that render result widgets rather than
+patching in place. See [mcp-apps-host-guide.md](mcp-apps-host-guide.md) for the full host contract.
 
 ### Resources
 

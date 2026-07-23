@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"techthos.net/binzaar/internal/models"
 )
 
 // validateConfigInput checks set_config's fields; empty fields are valid
@@ -109,10 +111,7 @@ func (h *handler) getConfig(_ context.Context, _ mcp.CallToolRequest) (*mcp.Call
 	if err != nil {
 		return toolErr(err)
 	}
-	res, err := mcp.NewToolResultJSON(configOutput{Config: cfg})
-	if err != nil {
-		return nil, err
-	}
+	res := mcp.NewToolResultStructured(configOutput{Config: cfg}, "Store configuration.")
 	w, werr := configWidget(cfg)
 	return embedUI(res, w, werr), nil
 }
@@ -132,10 +131,10 @@ func (h *handler) setConfig(_ context.Context, _ mcp.CallToolRequest, in configI
 	if err != nil {
 		return toolErr(err)
 	}
-	res, err := mcp.NewToolResultJSON(configOutput{Config: cfg})
-	if err != nil {
-		return nil, err
-	}
+	res := mcp.NewToolResultStructured(
+		configFormOutput{Config: cfg, Values: configValues{ManifestURL: cfg.ManifestURL, InstallDir: cfg.InstallDir}},
+		"Configuration saved.",
+	)
 	w, werr := configWidget(cfg)
 	return embedUI(res, w, werr), nil
 }
@@ -145,7 +144,7 @@ func (h *handler) listCatalog(ctx context.Context, _ mcp.CallToolRequest) (*mcp.
 	if err != nil {
 		return toolErr(err)
 	}
-	return h.catalogResult(rows)
+	return h.catalogResult(rows), nil
 }
 
 func (h *handler) searchApps(ctx context.Context, _ mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, error) {
@@ -157,32 +156,33 @@ func (h *handler) searchApps(ctx context.Context, _ mcp.CallToolRequest, in sear
 	if err != nil {
 		return toolErr(err)
 	}
-	return h.catalogResult(rows)
+	return h.catalogResult(rows), nil
 }
 
-// catalogResult builds the catalog JSON result with the table widget embedded.
-func (h *handler) catalogResult(rows []catalogRow) (*mcp.CallToolResult, error) {
-	res, err := mcp.NewToolResultJSON(catalogOutput{Apps: rows})
-	if err != nil {
-		return nil, err
-	}
+// catalogResult builds the catalog result with the table widget embedded. The
+// text block is a short status line, not raw JSON: a JSON text block flashes in
+// the host before the widget paints over it; the machine data always stands
+// alone in structuredContent (under "apps", the catalog table's rowsKey).
+func (h *handler) catalogResult(rows []catalogRow) *mcp.CallToolResult {
+	res := mcp.NewToolResultStructured(
+		catalogOutput{Apps: rows},
+		fmt.Sprintf("%d apps in the catalog.", len(rows)),
+	)
 	w, werr := catalogWidget(rows)
-	return embedUI(res, w, werr), nil
+	return embedUI(res, w, werr)
 }
 
-// installedResult builds an installed-list JSON result with the table widget
-// embedded, from the current tracked installs.
-func (h *handler) installedResult(v any) (*mcp.CallToolResult, error) {
-	res, err := mcp.NewToolResultJSON(v)
-	if err != nil {
-		return nil, err
-	}
-	list, lerr := h.app.ListInstalled()
-	if lerr != nil {
-		return nil, lerr
-	}
+// installedResult builds an installed-list result with the table widget
+// embedded. As in catalogResult the text block is a short status line (raw JSON
+// would flash before the widget renders); the list stands alone in
+// structuredContent under "installed" (the installed table's rowsKey).
+func (h *handler) installedResult(list []models.InstalledApp) *mcp.CallToolResult {
+	res := mcp.NewToolResultStructured(
+		installedListOutput{Installed: nz(list)},
+		fmt.Sprintf("%d apps installed.", len(list)),
+	)
 	w, werr := installedWidget(nz(list))
-	return embedUI(res, w, werr), nil
+	return embedUI(res, w, werr)
 }
 
 func (h *handler) appDetails(ctx context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
@@ -206,7 +206,7 @@ func (h *handler) listInstalled(_ context.Context, _ mcp.CallToolRequest) (*mcp.
 	if err != nil {
 		return toolErr(err)
 	}
-	return h.installedResult(installedListOutput{Installed: nz(list)})
+	return h.installedResult(list), nil
 }
 
 func (h *handler) installApp(ctx context.Context, _ mcp.CallToolRequest, in installInput) (*mcp.CallToolResult, error) {
@@ -214,32 +214,58 @@ func (h *handler) installApp(ctx context.Context, _ mcp.CallToolRequest, in inst
 	if err != nil {
 		return toolErr(err)
 	}
-	res, err := mcp.NewToolResultJSON(installOutput{Installed: rec})
-	if err != nil {
-		return nil, err
-	}
-	// Embed the refreshed catalog so the status badge reflects the install.
+	banner := "Installed " + rec.Repo + " " + rec.Version
+	// The refreshed catalog rows go under "apps" (the catalog table's rowsKey)
+	// so the widget that fired the Install patches its rows in place, and are
+	// also baked into the embedded refresh widget for fresh-render hosts.
 	rows, rerr := h.catalogRows(ctx)
 	if rerr != nil {
-		return res, nil // install succeeded; the widget is optional
+		// Install succeeded; without the catalog the widget just can't refresh.
+		return mcp.NewToolResultStructured(installOutput{Installed: rec}, banner), nil
 	}
+	res := mcp.NewToolResultStructured(installOutput{Installed: rec, Apps: rows}, banner)
 	w, werr := catalogWidget(rows)
 	return embedUI(res, w, werr), nil
 }
 
 func (h *handler) updateApp(ctx context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
-	res, err := h.app.Update(ctx, in.Repo)
+	r, err := h.app.Update(ctx, in.Repo)
 	if err != nil {
 		return toolErr(err)
 	}
-	return h.installedResult(res)
+	list, err := h.app.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+	banner := in.Repo + " is already up to date (" + r.To + ")"
+	if r.Updated {
+		banner = "Updated " + in.Repo + " from " + r.From + " to " + r.To
+	}
+	out := updateOutput{Installed: nz(list), Updated: r.Updated, From: r.From, To: r.To, Repo: in.Repo}
+	return h.installedTableResult(out, banner, list), nil
 }
 
 func (h *handler) uninstallApp(_ context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
 	if err := h.app.Uninstall(in.Repo); err != nil {
 		return toolErr(err)
 	}
-	return h.installedResult(removedOutput{Removed: true})
+	list, err := h.app.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+	out := uninstallOutput{Installed: nz(list), Removed: true, Repo: in.Repo}
+	return h.installedTableResult(out, "Uninstalled "+in.Repo, list), nil
+}
+
+// installedTableResult renders a mutation surfaced on the installed table:
+// structured (which must carry the refreshed installs under "installed", the
+// table's rowsKey) patches the live widget in place, banner is the human
+// status line, and the installed widget is embedded for hosts that render a
+// fresh result widget.
+func (h *handler) installedTableResult(structured any, banner string, list []models.InstalledApp) *mcp.CallToolResult {
+	res := mcp.NewToolResultStructured(structured, banner)
+	w, werr := installedWidget(nz(list))
+	return embedUI(res, w, werr)
 }
 
 func (h *handler) verifyApp(_ context.Context, _ mcp.CallToolRequest, in repoInput) (*mcp.CallToolResult, error) {
@@ -263,10 +289,10 @@ func (h *handler) listTemplates(ctx context.Context, _ mcp.CallToolRequest) (*mc
 	if err != nil {
 		return toolErr(err)
 	}
-	res, err := mcp.NewToolResultJSON(templatesOutput{Templates: nz(tmpls)})
-	if err != nil {
-		return nil, err
-	}
+	res := mcp.NewToolResultStructured(
+		templatesOutput{Templates: nz(tmpls)},
+		fmt.Sprintf("%d templates available.", len(nz(tmpls))),
+	)
 	w, werr := templatesWidget(nz(tmpls))
 	return embedUI(res, w, werr), nil
 }

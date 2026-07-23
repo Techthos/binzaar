@@ -96,24 +96,50 @@ version** — a widget built with `github.com/techthos/gadget` — not just a te
 **Invoke the `gadget-mcp-ui` skill before writing any widget code**; the skill and its
 `reference.md` are the source of truth for the gadget API — do not restate or improvise it here.
 
-Widgets are delivered **embedded per call**: each tool result carries a self-contained HTML
-document tagged with the **MCP Apps HTML profile** (`text/html;profile=mcp-app`), which the host
-renders in a sandboxed iframe and drives through the standard **App Bridge**
-(`@modelcontextprotocol/ext-apps`) — the [MCP Apps extension](https://modelcontextprotocol.io/extensions/apps/overview),
-`io.modelcontextprotocol/ui`. Do **not** invent a custom UI-event channel; interactions flow back
-as the standard MCP Apps JSON-RPC methods below.
+Widgets follow the **MCP Apps extension** ([`io.modelcontextprotocol/ui`](https://modelcontextprotocol.io/extensions/apps/overview),
+spec version `2026-01-26`): a self-contained HTML document tagged with the **MCP Apps HTML profile**
+(`text/html;profile=mcp-app`) that the host renders in a sandboxed iframe and drives through the
+standard **App Bridge** (`@modelcontextprotocol/ext-apps`) over `postMessage`. Spec-canonically the
+document is a **pre-registered `ui://` template resource** that tools link via
+`_meta.ui.resourceUri` and the host fetches with `resources/read`; **this server uses gadget's
+embedded-per-call variant** — each tool result carries the document inline as an embedded `ui://`
+resource with the call's data baked in — which gadget drives through the same App Bridge. Either
+way, do **not** invent a custom UI-event channel and do **not** inject chat prompts (no
+`postMessage`-a-prompt fallback): interactions flow back only as the standard MCP Apps JSON-RPC
+methods below.
 
 - Build the widget **per call** with the data baked in (`InitialData`) and a **unique `ui://` URI
   per render**; append the rendered `Document()` to the tool result's `content` as an embedded
   resource (`mcp.NewEmbeddedResource(mcp.TextResourceContents{URI, MIMEType: "text/html;profile=mcp-app", Text})`)
-  **after** the JSON text block. The JSON result must always stand alone — widget build/render
-  failures are logged to stderr and never fail the tool.
+  **after** the text content block. The non-UI result (text block + `structuredContent`) must always
+  stand alone; widget build/render failures are logged to stderr and never fail the tool.
 - **Table** for list/read output, **Form** for create/update input (prefill via baked `values`,
   inline field errors under `errors` keyed by field name).
-- Actions and submits target the **normal model-visible tools**; the App Bridge dispatches each
-  interaction as a standard **`tools/call`** it runs directly against this server (links via
-  **`ui/open-link`**, iframe height via **`ui/notifications/size-changed`**). Mutating tools embed
-  the **refreshed dataset's widget** in their result so the effect is visible.
+- Actions and submits target the **normal model-visible tools**; a widget click/submit dispatches a
+  standard **`tools/call`** over the App Bridge that the host runs directly against this server
+  (links use **`ui/open-link`**, iframe height is applied via **`ui/notifications/size-changed`**).
+- **In-place refresh is the standard tool-result push — not a chat prompt, not a static snapshot.**
+  When a widget's `tools/call` completes, the host sends that result back to the same widget via
+  **`ui/notifications/tool-result`**, and the gadget runtime re-renders the widget from the result's
+  `structuredContent`: a table repaints its rows when `structuredContent` carries that table's
+  **`rowsKey`** (the fresh rows array), a form re-applies fields from its **`prefillKey`** (and
+  inline errors from its `errorsKey`). So a mutating tool must return the **refreshed collection
+  under the target widget's key** (e.g. an install action surfaced on a `rowsKey: "apps"` catalog
+  table returns `{"apps": <refreshed rows>}`), or the visible widget goes stale even though the tool
+  succeeded. The host drives the re-render off the returned result — the iframe is neither mutated by
+  our code nor left as a frozen snapshot, and it never re-posts a prompt. Also embed a freshly
+  rendered widget in the result as a fallback for hosts that render result widgets rather than
+  patching in place.
+- **Mutating results carry a human status line as the text block, not raw JSON.** The gadget runtime
+  shows a table/form's first text content block as its status banner, so build mutating results with
+  `mcp.NewToolResultStructured(payload, "Installed owner/name v1.2.3")`: `payload` (carrying the
+  widget key above) lands in `structuredContent`, and the short sentence is what the user sees.
+  **Read/list tools that embed a widget use the same status-line form** (e.g.
+  `mcp.NewToolResultStructured(catalogOutput{Apps: rows}, "5 apps in the catalog.")`): a raw-JSON
+  text block flashes visibly in an MCP Apps host until the widget paints over it, so keep the JSON in
+  `structuredContent` (what the model reads) and make the text block a short sentence. Reserve
+  `mcp.NewToolResultJSON` for tools with **no** embedded widget (e.g. `app_details`, `list_releases`),
+  where the JSON text block is the only output.
 - **Destructive actions (delete)**: table row actions with `Action.Confirm` — the sandboxed
   iframe has no native `confirm()`/`alert()`.
 - New or changed widgets and tools are product-surface changes → update `docs/SPECIFICATIONS.md`

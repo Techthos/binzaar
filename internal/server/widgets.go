@@ -98,7 +98,6 @@ func installedWidget(installed []models.InstalledApp) (gadget.Widget, error) {
 			gadget.Text("version", "Version"),
 			gadget.Text("category", "Category"),
 			gadget.Date("installed_at", "Installed", "date"),
-			gadget.Text("path", "Path"),
 			gadget.ActionsColumn(
 				gadget.Action{
 					Label:   "Update",

@@ -91,12 +91,33 @@ type installedListOutput struct {
 	Installed []models.InstalledApp `json:"installed"`
 }
 
+// installOutput carries the install record plus the refreshed catalog rows
+// under "apps" — the catalog table's rowsKey — so the widget that fired the
+// Install action patches its rows in place (status badge flips to installed).
 type installOutput struct {
 	Installed models.InstalledApp `json:"installed"`
+	Apps      []catalogRow        `json:"apps"`
 }
 
-type removedOutput struct {
-	Removed bool `json:"removed"`
+// updateOutput carries the update outcome plus the refreshed installs under
+// "installed" — the installed table's rowsKey — so the live widget patches in
+// place. "installed" is the full refreshed list (the updated app is the entry
+// named by "repo"), not the single record.
+type updateOutput struct {
+	Installed []models.InstalledApp `json:"installed"`
+	Updated   bool                  `json:"updated"`
+	From      string                `json:"from"`
+	To        string                `json:"to"`
+	Repo      string                `json:"repo"`
+}
+
+// uninstallOutput carries the removal flag plus the refreshed installs under
+// "installed" — the installed table's rowsKey — so the live widget patches in
+// place (the removed row disappears).
+type uninstallOutput struct {
+	Installed []models.InstalledApp `json:"installed"`
+	Removed   bool                  `json:"removed"`
+	Repo      string                `json:"repo"`
 }
 
 type verifyOutput struct {
@@ -118,6 +139,19 @@ type configInput struct {
 
 type configOutput struct {
 	Config models.Config `json:"config"`
+}
+
+// configFormOutput carries the saved config plus its field values under
+// "values" — the config form's prefillKey — so a successful set_config
+// refreshes the live form's fields in place.
+type configFormOutput struct {
+	Config models.Config `json:"config"`
+	Values configValues  `json:"values"`
+}
+
+type configValues struct {
+	ManifestURL string `json:"manifest_url"`
+	InstallDir  string `json:"install_dir"`
 }
 
 // configErrorsOutput carries field-level validation errors for the config form

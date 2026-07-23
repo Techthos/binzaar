@@ -143,8 +143,18 @@ func resultText(t *testing.T, res *mcp.CallToolResult) string {
 func decode[T any](t *testing.T, res *mcp.CallToolResult) T {
 	t.Helper()
 	var out T
-	if err := json.Unmarshal([]byte(resultText(t, res)), &out); err != nil {
-		t.Fatalf("decode result: %v\nraw: %s", err, resultText(t, res))
+	// Prefer structuredContent — the canonical machine output. The text block
+	// may be a human-readable status banner (mutating tools) rather than JSON.
+	raw := []byte(resultText(t, res))
+	if res.StructuredContent != nil {
+		b, err := json.Marshal(res.StructuredContent)
+		if err != nil {
+			t.Fatalf("marshal structuredContent: %v", err)
+		}
+		raw = b
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode result: %v\nraw: %s", err, raw)
 	}
 	return out
 }
@@ -436,9 +446,19 @@ func TestUpdateTool(t *testing.T) {
 	if res := call(t, c, "install_app", map[string]any{"repo": "o/app"}); res.IsError {
 		t.Fatalf("install: %s", resultText(t, res))
 	}
-	out := decode[app.UpdateResult](t, call(t, c, "update_app", map[string]any{"repo": "o/app"}))
+	out := decode[struct {
+		Installed []models.InstalledApp `json:"installed"`
+		Updated   bool                  `json:"updated"`
+		To        string                `json:"to"`
+		Repo      string                `json:"repo"`
+	}](t, call(t, c, "update_app", map[string]any{"repo": "o/app"}))
 	if out.Updated {
 		t.Errorf("expected no-op update, got %+v", out)
+	}
+	// The refreshed installs ride under "installed" (the table rowsKey) so the
+	// live widget patches in place.
+	if len(out.Installed) != 1 || out.Installed[0].Repo != "o/app" {
+		t.Errorf("update_app installed = %+v, want the refreshed list", out.Installed)
 	}
 }
 
@@ -473,7 +493,8 @@ func TestScaffoldTool(t *testing.T) {
 // --- Interactive UI: gadget widgets embedded per call (mcp-ui convention) ---
 
 // embeddedWidget asserts the result's last content block is an embedded
-// ui://binzaar/<kind>/... text/html resource and returns its document.
+// ui://binzaar/<kind>/... text/html;profile=mcp-app resource and returns its
+// document.
 func embeddedWidget(t *testing.T, res *mcp.CallToolResult, kind string) string {
 	t.Helper()
 	if len(res.Content) < 2 {
@@ -491,8 +512,8 @@ func embeddedWidget(t *testing.T, res *mcp.CallToolResult, kind string) string {
 	if len(tc.URI) <= len(prefix) || tc.URI[:len(prefix)] != prefix {
 		t.Errorf("widget URI = %q, want unique URI under %q", tc.URI, prefix)
 	}
-	if tc.MIMEType != "text/html" {
-		t.Errorf("widget MIME = %q, want text/html", tc.MIMEType)
+	if tc.MIMEType != "text/html;profile=mcp-app" {
+		t.Errorf("widget MIME = %q, want text/html;profile=mcp-app", tc.MIMEType)
 	}
 	if tc.Text == "" {
 		t.Fatal("widget document is empty")
